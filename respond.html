@@ -1,0 +1,256 @@
+<!doctype html>
+<!--
+  Scheduler: the page an OUTSIDE guest opens from their email to mark which times work.
+  resources.mismo.org/scheduler/respond.html#r=<request>&g=<guest>.<code>
+
+  No sign-in. The link's code lives after the # so it is never sent to any server in the address, never
+  appears in logs, and is not passed on as a referrer. The page talks to two relay routes that need no
+  sign-in (POST /scheduler/poll/view and /scheduler/poll/answer). The relay checks the code against the
+  request and hands back only what this one guest needs: the meeting's name, the times, and their own
+  earlier answer. It never shows other guests' names, emails or answers.
+
+  Opened anywhere other than resources.mismo.org (or with ?preview=1): a preview with sample times.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+<meta name="referrer" content="no-referrer">
+<title>Pick Your Times | MISMO</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<script>(function(){ try { var t = localStorage.getItem('mismo.portal.theme'); if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t); } catch (e) {} })();</script>
+<style>
+:root{
+  --navy:#0d314c; --sky:#74bfeb; --navy-deep:#06202f; --navy-mid:#14486e; --sky-soft:#a9d8f3; --sky-wash:#e4f2fb;
+  --ground:#f1f6fa; --surface:#ffffff; --surface-2:#f6fafd; --surface-3:#e9f1f8;
+  --border:#d5e2ed; --border-strong:#adc4d6; --rule:#e5eef5;
+  --ink:#0d314c; --ink-2:#456179; --ink-3:#7794aa;
+  --good:#0f7b5c; --bad:#b3372c; --warn:#a2701a; --good-soft:#e2f3ec; --bad-soft:#fbe9e7; --warn-soft:#fbf1dc;
+  --btn:#0d314c; --btn-ink:#fff;
+  --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --ground:#061722; --surface:#0d2837; --surface-2:#123143; --surface-3:#173c52;
+  --border:#1f4a63; --border-strong:#2f6688; --rule:#173547;
+  --ink:#e9f4fb; --ink-2:#a6c5d9; --ink-3:#7a9db4;
+  --good:#4fc79b; --bad:#f08579; --warn:#e0a83c; --good-soft:#123a30; --bad-soft:#3d1f1d; --warn-soft:#3a2e14; --sky-wash:#102f41;
+  --btn:#74bfeb; --btn-ink:#06202f; color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --ground:#061722; --surface:#0d2837; --surface-2:#123143; --surface-3:#173c52;
+  --border:#1f4a63; --border-strong:#2f6688; --rule:#173547;
+  --ink:#e9f4fb; --ink-2:#a6c5d9; --ink-3:#7a9db4;
+  --good:#4fc79b; --bad:#f08579; --warn:#e0a83c; --good-soft:#123a30; --bad-soft:#3d1f1d; --warn-soft:#3a2e14; --sky-wash:#102f41;
+  --btn:#74bfeb; --btn-ink:#06202f; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.6}
+[hidden]{display:none!important}
+button,input,select,textarea{font:inherit;color:inherit}
+.masthead{background:var(--navy);color:#fff}
+.masthead-in{display:flex;align-items:center;gap:14px;padding:11px 16px;max-width:760px;margin:0 auto}
+.logoplate{background:#fff;border-radius:5px;padding:9px 13px;display:flex;align-items:center;line-height:0;flex:none}
+.logoplate .wordmark{height:22px;width:auto}
+.vrule{width:1px;align-self:stretch;background:rgba(116,191,235,.4)}
+.pagename{color:var(--sky-soft);font-weight:500;font-size:14.5px}
+main{max-width:760px;margin:0 auto;padding:28px 16px 80px}
+h1{font-size:25px;letter-spacing:-.012em;margin:0 0 6px;text-wrap:balance}
+.lede{color:var(--ink-2);margin:0 0 4px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-top:22px}
+.card h2{font-size:16px;margin:0 0 4px}
+.muted{color:var(--ink-3)}
+.small{font-size:13px}
+.facts{display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--ink-2);font-size:14px;margin-top:8px}
+.tzrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0 4px;font-size:14px;color:var(--ink-2)}
+select,textarea,input[type=text]{border:1px solid var(--border-strong);background:var(--surface);border-radius:8px;padding:8px 10px;min-height:40px}
+textarea{width:100%;min-height:80px;resize:vertical}
+select:focus,textarea:focus{outline:2px solid var(--sky);border-color:var(--sky)}
+.day{margin-top:18px}
+.day h3{font-size:13px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);margin:0 0 6px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 0;border-top:1px solid var(--rule)}
+.row .t{font-weight:600;font-size:15.5px}
+.tri{display:inline-flex;border:1px solid var(--border-strong);border-radius:8px;overflow:hidden}
+.tri button{appearance:none;border:0;border-right:1px solid var(--border);background:var(--surface);padding:8px 14px;font-size:14px;font-weight:600;cursor:pointer;color:var(--ink-2);min-width:76px}
+.tri button:last-child{border-right:0}
+.tri button:focus-visible{outline:2px solid var(--sky);outline-offset:-2px}
+.tri button[aria-pressed="true"].y{background:var(--good);color:#fff}
+.tri button[aria-pressed="true"].m{background:var(--warn);color:#fff}
+.tri button[aria-pressed="true"].n{background:var(--bad);color:#fff}
+@media(max-width:480px){.tri{width:100%}.tri button{flex:1;min-width:0}}
+.btn{appearance:none;border:1px solid var(--btn);background:var(--btn);color:var(--btn-ink);border-radius:8px;padding:11px 20px;font-weight:600;font-size:15px;cursor:pointer}
+.btn:disabled{opacity:.55;cursor:default}
+.btn.ghost{background:var(--surface);color:var(--ink);border-color:var(--border-strong);padding:6px 12px;font-size:13px}
+.note{padding:14px 16px;border-radius:10px;border:1px solid var(--border);background:var(--surface);margin-top:18px}
+.note.ok{border-color:var(--good);background:var(--good-soft)}
+.note.bad{border-color:var(--bad);background:var(--bad-soft)}
+.note.warn{border-color:var(--warn);background:var(--warn-soft)}
+.hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+.foot{margin-top:26px;color:var(--ink-3);font-size:13px}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><symbol id="mismo-logo" viewBox="0 0 708 108"><g transform="translate(0.000000,108.000000) scale(0.100000,-0.100000)" fill="var(--logo-body, #0f314c)"><path d="M5917 1065 c-169 -46 -279 -153 -335 -323 -21 -65 -25 -96 -25 -197
+0 -101 4 -132 25 -197 57 -172 168 -280 335 -323 84 -22 723 -22 808 0 222 58
+355 253 355 520 0 270 -132 459 -361 520 -74 20 -730 20 -802 0z m692 -320
+c57 -33 76 -84 76 -200 0 -116 -19 -167 -76 -200 -32 -19 -52 -20 -294 -20
+-297 0 -307 2 -346 83 -30 61 -31 198 -2 262 41 93 68 100 368 97 219 -2 243
+-4 274 -22z M0 545 l0 -515 225 0 225 0 2 296 3 296 116 -294 116 -293 197 0 198
+0 119 295 118 295 1 -297 0 -298 225 0 225 0 0 515 0 515 -337 -2 -338 -3
+-104 -264 c-80 -204 -107 -260 -113 -245 -5 10 -52 129 -106 264 l-98 245
+-337 3 -337 2 0 -515z M1892 1044 l-22 -15 0 -483 c0 -455 1 -484 18 -499 16 -15 48 -17
+246 -17 128 0 235 4 246 10 32 17 34 57 4 95 -33 44 -64 143 -64 206 l0 49
+203 0 c191 0 205 -1 222 -20 10 -11 34 -24 54 -30 49 -13 586 -13 612 0 22 12
+26 62 7 78 -8 6 -174 15 -413 21 -502 15 -549 23 -628 110 -43 48 -57 93 -57
+187 0 82 19 156 55 208 30 44 32 77 7 99 -27 25 -456 25 -490 1z M3716 1044 c-23 -22 -20 -31 19 -77 43 -49 78 -155 73 -218 l-3 -44
+-204 -3 c-194 -2 -205 -1 -218 17 -24 35 -78 41 -355 41 -255 0 -269 -1 -288
+-20 -27 -27 -26 -58 3 -70 12 -5 202 -14 422 -19 421 -12 476 -18 555 -62 92
+-51 132 -159 111 -299 -12 -77 -34 -129 -77 -179 -23 -28 -25 -36 -16 -57 l12
+-24 215 0 215 0 2 306 3 306 120 -303 120 -304 197 -3 196 -2 118 296 119 297
+3 -296 2 -297 225 0 225 0 0 515 0 515 -338 0 -337 0 -104 -265 c-58 -146
+-106 -263 -108 -261 -2 2 -50 120 -107 262 l-104 259 -340 3 c-300 2 -342 0
+-356 -14z"/></g><g transform="translate(0.000000,108.000000) scale(0.100000,-0.100000)" fill="var(--logo-s, #50a4db)"><path d="M2485 1046 c-44 -20 -111 -94 -136 -151 -27 -60 -37 -198 -20 -263
+13 -48 68 -115 114 -138 64 -34 162 -43 562 -55 239 -6 405 -15 413 -21 19
+-16 15 -66 -7 -78 -26 -13 -563 -13 -612 0 -20 6 -44 19 -54 30 -17 19 -31 20
+-222 20 l-203 0 0 -49 c0 -81 34 -172 86 -230 78 -87 31 -81 672 -81 l568 0
+46 29 c79 50 122 121 139 231 21 140 -19 248 -111 299 -79 44 -134 50 -555 62
+-220 5 -410 14 -422 19 -29 12 -30 43 -3 70 19 19 33 20 288 20 277 0 331 -6
+355 -41 13 -18 24 -19 218 -17 l204 3 3 44 c4 60 -31 168 -70 215 -17 21 -52
+52 -77 67 l-45 29 -550 0 c-440 -1 -557 -3 -581 -14z"/></g></symbol></defs></svg>
+<header class="masthead"><div class="masthead-in">
+  <span class="logoplate"><svg class="wordmark" role="img" aria-label="MISMO" viewBox="0 0 708 108"><use href="#mismo-logo"/></svg></span>
+  <span class="vrule"></span><span class="pagename">Pick Your Times</span>
+</div></header>
+<main>
+  <div id="state" role="status" aria-live="polite"><p class="muted">Loading your times…</p></div>
+  <form id="form" hidden novalidate>
+    <h1 id="title"></h1>
+    <p class="lede" id="lede"></p>
+    <div class="facts" id="facts"></div>
+    <section class="card">
+      <h2>Which of these times work for you?</h2>
+      <div class="tzrow"><span>Show times in</span><select id="tz" aria-label="Time zone"></select><button type="button" class="btn ghost" id="allyes">They all work</button></div>
+      <div id="slots"></div>
+    </section>
+    <section class="card">
+      <label for="msg"><h2 style="display:inline">Anything we should know?</h2> <span class="muted small">(optional)</span></label>
+      <textarea id="msg" maxlength="1000" placeholder="e.g. Mornings are best, or I could also do Friday."></textarea>
+      <div class="hp" aria-hidden="true"><label>Website <input type="text" id="website" tabindex="-1" autocomplete="off"></label></div>
+      <div style="margin-top:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <button class="btn" type="submit" id="send">Send my answers</button>
+        <span id="say" class="small" role="status" aria-live="polite"></span>
+      </div>
+    </section>
+    <p class="foot">This link is just for you. You can come back to it to change your answers until the meeting is booked.</p>
+  </form>
+</main>
+<script>
+(function () {
+  'use strict';
+  var RELAY_URL = 'https://rgvdi67cg27o5kcmiytcqbqnrm0hmztx.lambda-url.us-east-1.on.aws';
+  var PREVIEW = location.hostname !== 'resources.mismo.org' || /[?&]preview=1\b/.test(location.search);
+  var h = location.hash.replace(/^#/, ''), R = (/(?:^|&)r=([a-z0-9]+)/.exec(h) || [])[1] || '', G = (/(?:^|&)g=([A-Za-z0-9_.\-]+)/.exec(h) || [])[1] || '';
+  var started = Date.now(), DATA = null, ans = {};
+  var ZONES = [['America/New_York', 'Eastern'], ['America/Chicago', 'Central'], ['America/Denver', 'Mountain'], ['America/Phoenix', 'Arizona'], ['America/Los_Angeles', 'Pacific'], ['America/Anchorage', 'Alaska'], ['Pacific/Honolulu', 'Hawaii'], ['Europe/London', 'London'], ['Europe/Paris', 'Central Europe'], ['Asia/Kolkata', 'India'], ['UTC', 'UTC']];
+  var tz = (function () { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York'; } catch (e) { return 'America/New_York'; } })();
+  if (!ZONES.some(function (z) { return z[0] === tz; })) ZONES.unshift([tz, tz.replace(/^.*\//, '').replace(/_/g, ' ')]);
+  function $(id) { return document.getElementById(id); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function day(t) { return new Date(t).toLocaleDateString('en-US', { timeZone: tz, weekday: 'long', month: 'long', day: 'numeric' }); }
+  function time(t) { return new Date(t).toLocaleTimeString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit' }); }
+  function abbr(t) { try { return new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'short' }).formatToParts(new Date(t)).find(function (p) { return p.type === 'timeZoneName'; }).value; } catch (e) { return ''; } }
+  function note(kind, html) { $('state').innerHTML = html ? '<div class="note ' + (kind || '') + '">' + html + '</div>' : ''; }
+
+  function call(path, body) {
+    if (PREVIEW) return Promise.resolve(sample(path, body));
+    return fetch(RELAY_URL + '/scheduler/poll/' + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store', referrerPolicy: 'no-referrer' })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) { var e = new Error(j.message || ('HTTP ' + r.status)); e.code = j.error; e.status = r.status; throw e; } return j; }); },
+        function () { var e = new Error('offline'); e.code = 'OFFLINE'; throw e; });
+  }
+  function sample(path, body) {
+    var M = 60000, base = Date.UTC(2026, 10, 3, 15, 0);
+    if (path === 'answer') return { ok: true };
+    return { status: 'open', title: 'Sample: MISMO Membership Info (made up)', purpose: 'A made-up example of what a guest sees.', organizer: 'Vanessa Rios', organizerEmail: 'vrios@mismo.org', duration: 30, where: 'Zoom', guest: 'Jordan Park',
+      slots: [[0, 0], [0, 240], [1, 60], [2, 0], [2, 300]].map(function (x, i) { var s = base + x[0] * 1440 * M + x[1] * M; return { id: 'v' + i, s: s, e: s + 30 * M }; }), answer: null };
+  }
+
+  function paintTz() {
+    var s = $('tz'); s.innerHTML = '';
+    ZONES.forEach(function (z) { var o = document.createElement('option'); o.value = z[0]; o.textContent = z[1]; s.appendChild(o); });
+    s.value = tz; s.onchange = function () { tz = s.value; paintSlots(); };
+  }
+  function paintSlots() {
+    var box = $('slots'); box.innerHTML = '';
+    var slots = DATA.slots.slice().sort(function (a, b) { return a.s - b.s; }), last = '', grp = null;
+    slots.forEach(function (sl) {
+      var d = day(sl.s);
+      if (d !== last) { grp = document.createElement('div'); grp.className = 'day'; grp.innerHTML = '<h3>' + esc(d) + '</h3>'; box.appendChild(grp); last = d; }
+      var row = document.createElement('div'); row.className = 'row';
+      var label = time(sl.s) + ' – ' + time(sl.e) + ' ' + abbr(sl.s);
+      row.innerHTML = '<span class="t">' + esc(label) + '</span>';
+      var tri = document.createElement('div'); tri.className = 'tri'; tri.setAttribute('role', 'group'); tri.setAttribute('aria-label', d + ' ' + label);
+      [['yes', 'Works', 'y'], ['no', 'Can’t', 'n']].forEach(function (o) {
+        var b = document.createElement('button'); b.type = 'button'; b.className = o[2]; b.textContent = o[1];
+        b.setAttribute('aria-pressed', String(ans[sl.id] === o[0]));
+        b.onclick = function () { ans[sl.id] = o[0]; Array.prototype.forEach.call(tri.children, function (x) { x.setAttribute('aria-pressed', String(x === b)); }); $('say').textContent = ''; };
+        tri.appendChild(b);
+      });
+      row.appendChild(tri); grp.appendChild(row);
+    });
+  }
+  function show(d) {
+    DATA = d;
+    if (d.status === 'cancelled') { note('warn', '<b>This meeting is no longer being scheduled.</b> Nothing more is needed from you. If you have questions, write to ' + esc(d.organizer || 'MISMO') + (d.organizerEmail ? ' at <a href="mailto:' + esc(d.organizerEmail) + '">' + esc(d.organizerEmail) + '</a>' : '') + '.'); return; }
+    if (d.status === 'booked') {
+      var c = d.chosen;
+      note('ok', '<b>“' + esc(d.title) + '” is booked' + (c ? ' for ' + esc(day(c.s)) + ', ' + esc(time(c.s)) + ' ' + esc(abbr(c.s)) : '') + '.</b> A calendar invitation will come from ' + esc(d.organizer || 'MISMO') + '. Thank you!');
+      return;
+    }
+    note('', '');
+    (d.answer && d.answer.yes || []).forEach(function (id) { ans[id] = 'yes'; });
+    if (d.answer) d.slots.forEach(function (s) { if (!ans[s.id]) ans[s.id] = 'no'; });
+    $('title').textContent = d.title;
+    $('lede').textContent = 'Hi ' + (String(d.guest || '').split(/\s+/)[0] || 'there') + ' — ' + (d.organizer || 'MISMO') + ' is finding a time for this meeting. Mark each time below, then press Send.';
+    $('facts').innerHTML = '<span>' + esc(d.duration || 30) + ' minutes</span>' + (d.where ? '<span>' + esc(d.where) + '</span>' : '') + (d.purpose ? '<span style="flex-basis:100%">' + esc(d.purpose) + '</span>' : '');
+    $('msg').value = (d.answer && d.answer.note) || '';
+    if (d.answer) $('state').innerHTML = '<div class="note ok">You answered on ' + esc(new Date(d.answer.at).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })) + '. Change anything below and send again.</div>';
+    paintTz(); paintSlots();
+    $('form').hidden = false;
+  }
+  $('allyes').onclick = function () { DATA.slots.forEach(function (s) { ans[s.id] = 'yes'; }); paintSlots(); };
+  $('form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var missing = DATA.slots.filter(function (s) { return !ans[s.id]; });
+    if (missing.length === DATA.slots.length) { $('say').textContent = 'Mark at least one time as Works or Can’t.'; return; }
+    var body = { r: R, g: G, yes: [], maybe: [], note: $('msg').value.trim(), startedAt: started, website: $('website').value };
+    DATA.slots.forEach(function (s) { if (ans[s.id] === 'yes') body.yes.push(s.id); });
+    $('send').disabled = true; $('say').textContent = 'Sending…';
+    call('answer', body).then(function () {
+      $('form').hidden = true;
+      var n = body.yes.length;
+      note('ok', '<b>Thank you — your answers are in.</b> ' + (n ? n + (n === 1 ? ' time works' : ' times work') + ' for you. ' : 'None of these times work for you — ' + esc(DATA.organizer || 'MISMO') + ' will be in touch with others. ') +
+        esc(DATA.organizer || 'MISMO') + ' will send a calendar invitation once a time is chosen. You can come back to this link to change your answers.' + (PREVIEW ? '<br><br><i>Preview: nothing was sent.</i>' : ''));
+      window.scrollTo(0, 0);
+    }, function (err) {
+      $('send').disabled = false;
+      $('say').textContent = err.code === 'TOO_MANY' ? 'Several answers were just sent from here. Please try again in a few minutes.' :
+        err.code === 'CLOSED' ? 'This meeting has just been booked, so answers are closed.' :
+        err.code === 'OFFLINE' ? 'Couldn’t connect. Check your internet connection and press Send again.' :
+        'Your answers couldn’t be saved just now. Please try again in a minute.';
+      $('say').style.color = 'var(--bad)';
+    });
+  });
+
+  if (!R || !G) { note('bad', '<b>This link isn’t complete.</b> Open it straight from the email you received, or reply to that email with the times that work for you.'); return; }
+  setTimeout(function () { call('view', { r: R, g: G }).then(show, function (err) {
+    if (err.code === 'NOT_FOUND' || err.status === 404 || err.code === 'BAD_LINK') note('bad', '<b>This link doesn’t match a meeting.</b> It may have been replaced. Reply to the email you received with the times that work for you.');
+    else if (err.code === 'TOO_MANY') note('warn', 'Too many tries from here in a short time. Please wait a few minutes and reload.');
+    else note('bad', 'Your times couldn’t be loaded just now. Please reload the page in a minute' + (err.code === 'OFFLINE' ? ' (check your internet connection)' : '') + ', or reply to the email with the times that work for you.');
+  }); }, PREVIEW ? 150 : 0);
+})();
+</script>
+</body>
+</html>

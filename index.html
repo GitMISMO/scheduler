@@ -1,0 +1,2019 @@
+<!doctype html>
+<!--
+  Scheduler, resources.mismo.org/scheduler/
+  Finds a meeting time with people inside and outside MISMO: proposes times from the team's Outlook
+  availability, collects who can make which time, drafts the emails, and reminds the organizer to follow up.
+
+  BEFORE UPLOADING A NEW COPY OF THIS FILE: download the current index.html from GitHub first and make your
+  changes to that copy. Uploading an older copy silently undoes everything that changed since.
+
+  Built the same way as Team HQ and Marketing HQ: the shared resources.mismo.org sign-in (/assets/session.js)
+  and the save relay (project key "scheduler", data in the PRIVATE repository GitMISMO/scheduler-data).
+  No GitHub token, API key or record is ever kept in this file. Outlook availability is read, never written,
+  from Team HQ's own files (team-hq-data/data/cal-<person>.json), and follow-up reminders are written to
+  Team HQ as tasks, so they show on the organizer's board on the day they fall due.
+
+  Opened anywhere other than resources.mismo.org (or with ?preview=1) it runs as a PREVIEW: sample requests,
+  nothing saved.
+-->
+<html lang="en" data-rs-gate>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Scheduler</title>
+<script>
+/* Theme first, so the page never flashes the wrong one. Same key every MISMO page uses. */
+(function(){ try { var t = localStorage.getItem('mismo.portal.theme'); if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t); } catch (e) {} })();
+/* Preview anywhere but the real site. */
+window.SCHED_PREVIEW = location.hostname !== 'resources.mismo.org' || /[?&]preview=1\b/.test(location.search);
+if (window.SCHED_PREVIEW) document.documentElement.removeAttribute('data-rs-gate');
+</script>
+<script>if (!window.SCHED_PREVIEW) document.write('<script src="/assets/session.js"><\/script>');</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --navy:#0d314c; --sky:#74bfeb; --navy-deep:#06202f; --navy-mid:#14486e; --sky-soft:#a9d8f3; --sky-wash:#e4f2fb;
+  --ground:#f1f6fa; --surface:#ffffff; --surface-2:#f6fafd; --surface-3:#e9f1f8;
+  --border:#d5e2ed; --border-strong:#adc4d6; --rule:#e5eef5;
+  --ink:#0d314c; --ink-2:#456179; --ink-3:#7794aa;
+  --good:#0f7b5c; --bad:#b3372c; --warn:#a2701a;
+  --good-soft:#e2f3ec; --bad-soft:#fbe9e7; --warn-soft:#fbf1dc; --link:#14486e;
+  --btn:#0d314c; --btn-ink:#ffffff; --tab-on:#0d314c;
+  --free:#d9efe5; --some:#fbecc9; --busy:#f3d6d2; --unk:#eef3f7; --pick:#0d314c; --pick-ink:#fff;
+  --shadow:0 1px 2px rgba(13,49,76,.06),0 4px 14px rgba(13,49,76,.05);
+  --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --ground:#061722; --surface:#0d2837; --surface-2:#123143; --surface-3:#173c52;
+  --border:#1f4a63; --border-strong:#2f6688; --rule:#173547;
+  --ink:#e9f4fb; --ink-2:#a6c5d9; --ink-3:#7a9db4;
+  --good:#4fc79b; --bad:#f08579; --warn:#e0a83c; --sky-wash:#102f41;
+  --good-soft:#123a30; --bad-soft:#3d1f1d; --warn-soft:#3a2e14; --link:#74bfeb;
+  --btn:#74bfeb; --btn-ink:#06202f; --tab-on:#74bfeb;
+  --free:#16463a; --some:#4a3b17; --busy:#4b2422; --unk:#173547; --pick:#74bfeb; --pick-ink:#06202f;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --ground:#061722; --surface:#0d2837; --surface-2:#123143; --surface-3:#173c52;
+  --border:#1f4a63; --border-strong:#2f6688; --rule:#173547;
+  --ink:#e9f4fb; --ink-2:#a6c5d9; --ink-3:#7a9db4;
+  --good:#4fc79b; --bad:#f08579; --warn:#e0a83c; --sky-wash:#102f41;
+  --good-soft:#123a30; --bad-soft:#3d1f1d; --warn-soft:#3a2e14; --link:#74bfeb;
+  --btn:#74bfeb; --btn-ink:#06202f; --tab-on:#74bfeb;
+  --free:#16463a; --some:#4a3b17; --busy:#4b2422; --unk:#173547; --pick:#74bfeb; --pick-ink:#06202f;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);font-size:14.5px;line-height:1.5}
+[hidden]{display:none!important}
+a{color:var(--link)}
+h1,h2,h3{letter-spacing:-.012em;margin:0;text-wrap:balance}
+button,input,select,textarea{font:inherit;color:inherit}
+
+/* ===== masthead (the Summit HQ / Marketing HQ bar) ===== */
+.hqtop{position:sticky;top:0;z-index:50;height:58px;background:var(--navy);color:#fff;display:flex;align-items:center;
+  padding:0 max(16px,env(safe-area-inset-left,0px));box-shadow:0 1px 0 rgba(80,164,219,.28)}
+.logoplate{background:#fff;border-radius:7px;padding:8px 14px;display:flex;align-items:center;line-height:0;flex:0 0 auto}
+.logoplate .wordmark{height:22px;width:auto;display:block}
+.mastrule{display:block;width:2px;height:32px;flex:0 0 auto;margin-inline:18px;border-radius:1px;background:var(--sky)}
+.hqname{font-size:15.5px;font-weight:700;color:var(--sky);white-space:nowrap}
+.hqtop-r{margin-left:auto;display:flex;align-items:center;gap:12px}
+.eyebrow-m{font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;color:rgba(255,255,255,.62);font-weight:600;white-space:nowrap}
+.theme-btn{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:5px;padding:5px 10px;font-size:11.5px;cursor:pointer}
+.theme-btn:hover{background:rgba(255,255,255,.18)}
+#rs-account{flex:0 0 auto;display:inline-flex;align-items:center}
+@media(max-width:700px){.eyebrow-m{display:none}}
+@media(max-width:480px){.mastrule{margin-inline:10px}.logoplate{padding:7px 10px}.logoplate .wordmark{height:18px}}
+
+/* ===== tabs ===== */
+.tabs{background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:58px;z-index:40}
+.tabs-in{max-width:1180px;margin:0 auto;display:flex;gap:4px;padding:0 16px;overflow-x:auto;scrollbar-width:none}
+.tab{appearance:none;background:none;border:0;border-bottom:3px solid transparent;padding:13px 12px 10px;font-weight:600;color:var(--ink-2);cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:7px}
+.tab:hover{color:var(--ink)}
+.tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--sky)}
+.count{font-family:var(--mono);font-size:11px;font-weight:600;min-width:20px;height:20px;padding:0 6px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;background:var(--surface-3);color:var(--ink-2)}
+.count.hot{background:var(--bad);color:#fff}
+
+/* ===== page ===== */
+main{max-width:1180px;margin:0 auto;padding:24px 16px 80px}
+.preview-band{background:var(--warn-soft);color:var(--ink);border:1px solid var(--warn);border-radius:8px;padding:10px 14px;margin-bottom:20px;font-size:13.5px}
+.notice{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--sky);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13.5px;color:var(--ink-2)}
+.notice b{color:var(--ink)}
+.notice.warn{border-left-color:var(--warn)}
+.notice.bad{border-left-color:var(--bad)}
+.pagehead{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+.pagehead h1{font-size:24px}
+.pagehead p{margin:4px 0 0;color:var(--ink-2)}
+.pagehead .grow{flex:1 1 300px}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);margin-bottom:28px}
+.panel-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:14px 18px;border-bottom:1px solid var(--rule)}
+.panel-h h2{font-size:16px}
+.panel-h .sub{color:var(--ink-3);font-size:13px}
+.panel-h .acts{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.panel-b{padding:16px 18px}
+.step{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--navy);color:#fff;font-size:12px;font-weight:700;flex:none}
+:root[data-theme="dark"] .step{background:var(--sky);color:var(--navy-deep)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .step{background:var(--sky);color:var(--navy-deep)}}
+.muted{color:var(--ink-3)}
+.small{font-size:12.5px}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+/* ===== buttons ===== */
+.btn{appearance:none;border:1px solid var(--btn);background:var(--btn);color:var(--btn-ink);border-radius:7px;padding:8px 14px;font-weight:600;font-size:13.5px;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:7px;text-decoration:none;line-height:1.3}
+.btn:hover{filter:brightness(1.08)}
+.btn:disabled{opacity:.5;cursor:default;filter:none}
+.btn.ghost{background:var(--surface);color:var(--ink);border-color:var(--border-strong)}
+.btn.ghost:hover{background:var(--surface-2);filter:none}
+.btn.sm{padding:5px 10px;font-size:12.5px}
+.btn.danger{background:var(--surface);color:var(--bad);border-color:var(--bad)}
+.btn.big{padding:11px 18px;font-size:14.5px}
+.btn svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.linkbtn{appearance:none;background:none;border:0;padding:0;color:var(--link);text-decoration:underline;cursor:pointer;font-size:inherit}
+
+/* ===== pills ===== */
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:2px 9px;border-radius:20px;white-space:nowrap;border:1px solid transparent}
+.p-collect{background:var(--sky-wash);color:var(--navy-mid);border-color:var(--sky)}
+:root[data-theme="dark"] .p-collect{color:var(--sky-soft)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .p-collect{color:var(--sky-soft)}}
+.p-ready{background:var(--good-soft);color:var(--good);border-color:var(--good)}
+.p-booked{background:var(--navy);color:#fff}
+:root[data-theme="dark"] .p-booked{background:var(--sky);color:var(--navy-deep)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .p-booked{background:var(--sky);color:var(--navy-deep)}}
+.p-draft{background:var(--surface-3);color:var(--ink-2);border-color:var(--border)}
+.p-due{background:var(--bad-soft);color:var(--bad);border-color:var(--bad)}
+.p-cancel{background:var(--surface-3);color:var(--ink-3);text-decoration:line-through}
+.p-yes{background:var(--good-soft);color:var(--good)}
+.p-wait{background:var(--warn-soft);color:var(--warn)}
+
+/* ===== follow-up cards ===== */
+.fu-list{display:grid;gap:10px}
+.fu{display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:12px 14px;border:1px solid var(--border);border-left:4px solid var(--bad);border-radius:8px;background:var(--surface)}
+.fu.soon{border-left-color:var(--warn)}
+.fu .who{flex:1 1 280px;min-width:0}
+.fu .who b{display:block}
+.fu .who span{color:var(--ink-2);font-size:13px}
+.fu .acts{display:flex;gap:8px;flex-wrap:wrap}
+.empty{padding:26px 18px;text-align:center;color:var(--ink-3)}
+
+/* ===== request list ===== */
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.seg{display:inline-flex;border:1px solid var(--border-strong);border-radius:7px;overflow:hidden;background:var(--surface)}
+.seg button{appearance:none;border:0;background:none;padding:6px 12px;font-size:13px;font-weight:600;color:var(--ink-2);cursor:pointer;border-right:1px solid var(--border)}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--navy);color:#fff}
+:root[data-theme="dark"] .seg button[aria-pressed="true"]{background:var(--sky);color:var(--navy-deep)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .seg button[aria-pressed="true"]{background:var(--sky);color:var(--navy-deep)}}
+.reqs{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px}
+@media(max-width:520px){.reqs{grid-template-columns:1fr}}
+.req{appearance:none;text-align:left;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;cursor:pointer;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:8px;color:var(--ink)}
+.req:hover{border-color:var(--border-strong)}
+.req h3{font-size:15.5px}
+.req .line{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:13px;color:var(--ink-2)}
+.bar{height:6px;border-radius:3px;background:var(--surface-3);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--good);border-radius:3px}
+
+/* ===== people ===== */
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:7px;padding:5px 11px 5px 5px;border:1px solid var(--border);border-radius:20px;background:var(--surface-2);font-size:13px}
+.chip .av{width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:700;color:#fff;background:var(--navy-mid);flex:none}
+.chip .tag{font-size:11px;color:var(--ink-3)}
+label.pick{cursor:pointer}
+label.pick input{position:absolute;opacity:0;pointer-events:none}
+label.pick .chip{transition:background .12s}
+label.pick input:checked + .chip{background:var(--sky-wash);border-color:var(--sky);font-weight:600}
+label.pick input:focus-visible + .chip{outline:2px solid var(--sky);outline-offset:2px}
+.guests{width:100%;border-collapse:collapse}
+.guests th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);font-weight:600;padding:6px 10px;border-bottom:1px solid var(--rule)}
+.guests td{padding:10px;border-bottom:1px solid var(--rule);vertical-align:middle}
+.guests tr:last-child td{border-bottom:0}
+.guests .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+@media(max-width:760px){
+  .guests thead{display:none}
+  .guests tr{display:block;padding:10px 0;border-bottom:1px solid var(--rule)}
+  .guests td{display:block;border:0;padding:3px 0}
+  .guests .acts{justify-content:flex-start;margin-top:6px}
+}
+
+/* ===== availability grid ===== */
+.gridwrap{overflow-x:auto;border:1px solid var(--border);border-radius:8px}
+table.av{border-collapse:separate;border-spacing:0;min-width:100%;font-size:13px}
+table.av th,table.av td{border-bottom:1px solid var(--rule);border-right:1px solid var(--rule);padding:7px 8px;text-align:center;white-space:nowrap}
+table.av th:first-child,table.av td:first-child{text-align:left;position:sticky;left:0;background:var(--surface);z-index:1;min-width:170px;white-space:normal}
+table.av thead th{background:var(--surface-2);font-weight:600;font-size:12px;vertical-align:bottom}
+table.av thead th .d{display:block;color:var(--ink-3);font-weight:500}
+table.av thead th.best{background:var(--good-soft);box-shadow:inset 0 3px 0 var(--good)}
+table.av td.c{min-width:92px}
+.cell{appearance:none;border:0;border-radius:5px;width:100%;padding:5px 4px;font-size:12px;font-weight:600;cursor:pointer;display:block}
+.cell[disabled]{cursor:default}
+.c-yes{background:var(--free);color:var(--good)}
+.c-maybe{background:var(--some);color:var(--warn)}
+.c-no{background:var(--busy);color:var(--bad)}
+.c-none{background:var(--unk);color:var(--ink-3);font-weight:500}
+table.av tfoot td{background:var(--surface-2);font-weight:600}
+.grp td{background:var(--surface-3)!important;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);font-weight:700;text-align:left!important}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-2);margin-top:10px}
+.legend i{display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:-2px;margin-right:5px}
+
+/* ===== time picker ===== */
+.tp-top{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.tp-wrap{overflow:auto;max-height:min(62vh,640px);border:1px solid var(--border);border-radius:8px}
+table.tp{border-collapse:separate;border-spacing:0;font-size:12px;width:100%}
+table.tp th{position:sticky;top:0;background:var(--surface-2);z-index:2;padding:6px 4px;border-bottom:1px solid var(--border);font-weight:600;min-width:78px}
+table.tp th:first-child,table.tp td:first-child{position:sticky;left:0;background:var(--surface);z-index:3;min-width:62px;text-align:right;padding-right:8px;color:var(--ink-3);font-family:var(--mono);font-size:11px}
+table.tp th:first-child{z-index:4}
+table.tp td{padding:1px 2px;border-bottom:1px solid var(--rule)}
+.slot{appearance:none;border:1px solid transparent;width:100%;height:24px;border-radius:4px;cursor:pointer;font-size:10.5px;font-weight:600;padding:0 3px;text-align:left;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.s-free{background:var(--free);color:var(--good)}
+.s-some{background:var(--some);color:var(--warn)}
+.s-busy{background:var(--busy);color:var(--bad)}
+.s-unk{background:var(--unk);color:var(--ink-3)}
+.s-on{background:var(--pick)!important;color:var(--pick-ink)!important;border-color:var(--pick)}
+.s-in{background:color-mix(in srgb,var(--pick) 55%,transparent)!important;color:var(--pick-ink)!important}
+.slot:hover{border-color:var(--ink-2)}
+.slot:focus-visible{outline:2px solid var(--sky);outline-offset:1px}
+
+/* ===== forms ===== */
+.form{display:grid;grid-template-columns:repeat(12,1fr);gap:14px 16px}
+.f{display:flex;flex-direction:column;gap:5px;grid-column:span 12}
+.f.w6{grid-column:span 6}.f.w4{grid-column:span 4}.f.w3{grid-column:span 3}.f.w8{grid-column:span 8}
+@media(max-width:700px){.f.w6,.f.w4,.f.w3,.f.w8{grid-column:span 12}}
+.f > span{font-size:12.5px;font-weight:600;color:var(--ink-2)}
+.f .hint{font-size:12px;color:var(--ink-3);font-weight:400}
+input[type=text],input[type=email],input[type=number],input[type=date],input[type=search],select,textarea{width:100%;border:1px solid var(--border-strong);background:var(--surface);border-radius:7px;padding:8px 10px;min-height:38px}
+textarea{resize:vertical;min-height:90px;line-height:1.5}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--sky);outline-offset:0;border-color:var(--sky)}
+.grow-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.guest-row{display:grid;grid-template-columns:1.2fr 1.4fr 1.2fr auto;gap:8px;margin-bottom:8px}
+@media(max-width:700px){.guest-row{grid-template-columns:1fr}}
+
+/* ===== dialog ===== */
+.scrim{position:fixed;inset:0;background:rgba(6,32,47,.55);z-index:200;display:flex;align-items:flex-start;justify-content:center;padding:4vh 12px;overflow:auto}
+.dlg{background:var(--surface);color:var(--ink);border-radius:12px;width:min(760px,100%);box-shadow:0 20px 60px rgba(0,0,0,.35);border:1px solid var(--border)}
+.dlg.wide{width:min(1100px,100%)}
+.dlg-h{display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid var(--rule)}
+.dlg-h h2{font-size:17px;flex:1}
+.dlg-b{padding:18px 20px}
+.dlg-f{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;padding:14px 20px;border-top:1px solid var(--rule);background:var(--surface-2);border-radius:0 0 12px 12px}
+.x{appearance:none;border:0;background:none;font-size:22px;line-height:1;cursor:pointer;color:var(--ink-3);padding:4px 8px;border-radius:6px}
+.x:hover{background:var(--surface-3);color:var(--ink)}
+.ans-row{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--rule);flex-wrap:wrap}
+.tri{display:inline-flex;border:1px solid var(--border-strong);border-radius:7px;overflow:hidden}
+.tri button{appearance:none;border:0;border-right:1px solid var(--border);background:var(--surface);padding:6px 12px;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--ink-2)}
+.tri button:last-child{border-right:0}
+.tri button[aria-pressed="true"].y{background:var(--good);color:#fff}
+.tri button[aria-pressed="true"].m{background:var(--warn);color:#fff}
+.tri button[aria-pressed="true"].n{background:var(--bad);color:#fff}
+.draft-out{border:1px solid var(--border);border-radius:8px;padding:14px;background:var(--surface-2);margin-top:14px}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .8s linear infinite;vertical-align:-2px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ===== bits ===== */
+.booked{display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:16px 18px;border-radius:10px;background:var(--good-soft);border:1px solid var(--good);margin-bottom:28px}
+.booked .when{font-size:18px;font-weight:700}
+.log{list-style:none;margin:0;padding:0;font-size:13px}
+.log li{padding:6px 0;border-bottom:1px solid var(--rule);display:flex;gap:10px}
+.log li span:first-child{color:var(--ink-3);min-width:130px;font-family:var(--mono);font-size:11.5px;padding-top:2px}
+.src{white-space:pre-wrap;font-family:var(--sans);font-size:13px;color:var(--ink-2);max-height:260px;overflow:auto;background:var(--surface-2);border:1px solid var(--rule);border-radius:7px;padding:10px 12px;margin:0}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--navy-deep);color:#fff;padding:10px 16px;border-radius:8px;font-size:13.5px;z-index:300;box-shadow:0 8px 24px rgba(0,0,0,.3);max-width:calc(100% - 32px)}
+.savestate{font-size:12px;color:var(--ink-3);margin-left:auto;align-self:center;white-space:nowrap}
+.back{display:inline-flex;align-items:center;gap:6px;margin-bottom:12px}
+.help h2{font-size:17px;margin:22px 0 8px}
+.help h2:first-child{margin-top:0}
+.help p,.help li{color:var(--ink-2);max-width:72ch}
+.help li{margin-bottom:6px}
+.kbd{font-family:var(--mono);font-size:12px;background:var(--surface-3);border:1px solid var(--border);border-radius:4px;padding:1px 5px}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><symbol id="mismo-logo" viewBox="0 0 708 108"><g transform="translate(0.000000,108.000000) scale(0.100000,-0.100000)" fill="var(--logo-body, #0f314c)"><path d="M5917 1065 c-169 -46 -279 -153 -335 -323 -21 -65 -25 -96 -25 -197
+0 -101 4 -132 25 -197 57 -172 168 -280 335 -323 84 -22 723 -22 808 0 222 58
+355 253 355 520 0 270 -132 459 -361 520 -74 20 -730 20 -802 0z m692 -320
+c57 -33 76 -84 76 -200 0 -116 -19 -167 -76 -200 -32 -19 -52 -20 -294 -20
+-297 0 -307 2 -346 83 -30 61 -31 198 -2 262 41 93 68 100 368 97 219 -2 243
+-4 274 -22z M0 545 l0 -515 225 0 225 0 2 296 3 296 116 -294 116 -293 197 0 198
+0 119 295 118 295 1 -297 0 -298 225 0 225 0 0 515 0 515 -337 -2 -338 -3
+-104 -264 c-80 -204 -107 -260 -113 -245 -5 10 -52 129 -106 264 l-98 245
+-337 3 -337 2 0 -515z M1892 1044 l-22 -15 0 -483 c0 -455 1 -484 18 -499 16 -15 48 -17
+246 -17 128 0 235 4 246 10 32 17 34 57 4 95 -33 44 -64 143 -64 206 l0 49
+203 0 c191 0 205 -1 222 -20 10 -11 34 -24 54 -30 49 -13 586 -13 612 0 22 12
+26 62 7 78 -8 6 -174 15 -413 21 -502 15 -549 23 -628 110 -43 48 -57 93 -57
+187 0 82 19 156 55 208 30 44 32 77 7 99 -27 25 -456 25 -490 1z M3716 1044 c-23 -22 -20 -31 19 -77 43 -49 78 -155 73 -218 l-3 -44
+-204 -3 c-194 -2 -205 -1 -218 17 -24 35 -78 41 -355 41 -255 0 -269 -1 -288
+-20 -27 -27 -26 -58 3 -70 12 -5 202 -14 422 -19 421 -12 476 -18 555 -62 92
+-51 132 -159 111 -299 -12 -77 -34 -129 -77 -179 -23 -28 -25 -36 -16 -57 l12
+-24 215 0 215 0 2 306 3 306 120 -303 120 -304 197 -3 196 -2 118 296 119 297
+3 -296 2 -297 225 0 225 0 0 515 0 515 -338 0 -337 0 -104 -265 c-58 -146
+-106 -263 -108 -261 -2 2 -50 120 -107 262 l-104 259 -340 3 c-300 2 -342 0
+-356 -14z"/></g><g transform="translate(0.000000,108.000000) scale(0.100000,-0.100000)" fill="var(--logo-s, #50a4db)"><path d="M2485 1046 c-44 -20 -111 -94 -136 -151 -27 -60 -37 -198 -20 -263
+13 -48 68 -115 114 -138 64 -34 162 -43 562 -55 239 -6 405 -15 413 -21 19
+-16 15 -66 -7 -78 -26 -13 -563 -13 -612 0 -20 6 -44 19 -54 30 -17 19 -31 20
+-222 20 l-203 0 0 -49 c0 -81 34 -172 86 -230 78 -87 31 -81 672 -81 l568 0
+46 29 c79 50 122 121 139 231 21 140 -19 248 -111 299 -79 44 -134 50 -555 62
+-220 5 -410 14 -422 19 -29 12 -30 43 -3 70 19 19 33 20 288 20 277 0 331 -6
+355 -41 13 -18 24 -19 218 -17 l204 3 3 44 c4 60 -31 168 -70 215 -17 21 -52
+52 -77 67 l-45 29 -550 0 c-440 -1 -557 -3 -581 -14z"/></g></symbol></defs></svg>
+<header class="hqtop">
+  <span class="logoplate"><svg class="wordmark" role="img" aria-label="MISMO" viewBox="0 0 708 108"><use href="#mismo-logo"/></svg></span>
+  <span class="mastrule"></span>
+  <span class="hqname">Scheduler</span>
+  <span class="hqtop-r">
+    <button class="theme-btn" id="theme-btn" type="button">Dark</button>
+    <span class="eyebrow-m">Programs &amp; Operations</span>
+    <!-- The shared account bubble every tool shows in this spot (session.js fills it). -->
+    <div id="rs-account"></div>
+  </span>
+</header>
+<nav class="tabs" aria-label="Scheduler">
+  <div class="tabs-in" role="tablist">
+    <button class="tab" role="tab" data-tab="inbox" type="button">Incoming <span class="count" id="in-count">0</span></button>
+    <button class="tab" role="tab" data-tab="follow" type="button">Follow Up <span class="count" id="fu-count">0</span></button>
+    <button class="tab" role="tab" data-tab="list" type="button">Requests</button>
+    <button class="tab" role="tab" data-tab="new" type="button">New Request</button>
+    <button class="tab" role="tab" data-tab="help" type="button">How It Works</button>
+    <span class="savestate" id="savestate" aria-live="polite"></span>
+  </div>
+</nav>
+<main id="app" aria-live="polite"></main>
+<script>
+/* ============================================================================
+   SCHEDULER — how it is put together
+   ----------------------------------------------------------------------------
+   One collection, data/requests.json in the PRIVATE repo GitMISMO/scheduler-data,
+   read and saved through the relay (project key "scheduler"):
+       {docs:{<request id>:{...a request...}}}
+   A request holds its MISMO people (Team HQ ids), its outside guests (each with a
+   private link code), the times offered, everyone's answers, and a short log.
+
+   Read, never written: Team HQ's people list and each person's Outlook availability
+   (team-hq/data/people, team-hq/data/cal-<id>) — the same files Team HQ shows.
+   Written to Team HQ: one task per request that is waiting on replies,
+   "Follow up: <meeting>", owned by the organizer, due on the follow-up date, and
+   marked Done once everyone has answered or the meeting is booked. That is the
+   reminder: it lands on the organizer's Team HQ board on the right day whether or
+   not anyone opens the Scheduler.
+
+   Outside guests answer at respond.html through two relay routes that need no
+   sign-in (POST /scheduler/poll/view and /scheduler/poll/answer; see the README).
+   Until those are switched on, staff type guests' answers in by hand.
+
+   Storage keys: tools:scheduler:<name>. Never localStorage.clear().
+   ========================================================================== */
+(function () {
+'use strict';
+
+var RELAY_URL = 'https://rgvdi67cg27o5kcmiytcqbqnrm0hmztx.lambda-url.us-east-1.on.aws';
+var PROJECT = 'scheduler', HQ = 'team-hq', TOOL = 'the Scheduler';
+var SITE = 'https://resources.mismo.org/scheduler/';
+var PREVIEW = !!window.SCHED_PREVIEW;
+var KEY = function (n) { return 'tools:scheduler:' + n; };
+var ET = 'America/New_York';
+var DEFAULT_FOLLOW_DAYS = 3;
+
+/* ---------------- small helpers ---------------- */
+function $(s, r) { return (r || document).querySelector(s); }
+function $$(s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function el(tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
+function clone(v) { return v == null ? v : JSON.parse(JSON.stringify(v)); }
+function rid(n) { var a = new Uint8Array(n || 9); crypto.getRandomValues(a); return Array.prototype.map.call(a, function (b) { return 'abcdefghijkmnpqrstuvwxyz23456789'[b % 32]; }).join(''); }
+function linkCode() { var a = new Uint8Array(18); crypto.getRandomValues(a); return btoa(String.fromCharCode.apply(null, a)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+function lsGet(n, d) { try { var v = localStorage.getItem(KEY(n)); return v == null ? d : JSON.parse(v); } catch (e) { return d; } }
+function lsSet(n, v) { try { if (v == null) localStorage.removeItem(KEY(n)); else localStorage.setItem(KEY(n), JSON.stringify(v)); } catch (e) {} }
+function initials(n) { var p = String(n || '?').trim().split(/\s+/); return ((p[0] || '?')[0] + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase(); }
+function first(n) { return String(n || '').trim().split(/[\s,]+/)[0] || ''; }
+var toastT;
+function toast(msg) { var t = $('.toast'); if (!t) { t = el('div', 'toast'); t.setAttribute('role', 'status'); document.body.appendChild(t); } t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(function () { t.hidden = true; }, 3800); }
+function copy(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text).catch(function () { return fallbackCopy(text); });
+  return Promise.resolve(fallbackCopy(text));
+}
+function fallbackCopy(text) { var t = el('textarea'); t.value = text; t.style.position = 'fixed'; t.style.opacity = '0'; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); } catch (e) {} t.remove(); }
+var ICON = {
+  mail: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>',
+  link: '<svg viewBox="0 0 24 24"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>',
+  cal: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+  plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+  check: '<svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>',
+  back: '<svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>',
+  spark: '<svg viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg>',
+  down: '<svg viewBox="0 0 24 24"><path d="M12 4v12M6 10l6 6 6-6M5 20h14"/></svg>',
+  pen: '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>'
+};
+
+/* ---------------- time ---------------- */
+var ZONES = [
+  { v: 'America/New_York', n: 'Eastern' }, { v: 'America/Chicago', n: 'Central' },
+  { v: 'America/Denver', n: 'Mountain' }, { v: 'America/Phoenix', n: 'Arizona' }, { v: 'America/Los_Angeles', n: 'Pacific' }
+];
+function zoneName(tz) { var z = ZONES.find(function (x) { return x.v === tz; }); return z ? z.n : tz.replace(/^.*\//, '').replace(/_/g, ' '); }
+function localZone() { try { var z = Intl.DateTimeFormat().resolvedOptions().timeZone; return ZONES.some(function (x) { return x.v === z; }) ? z : ET; } catch (e) { return ET; } }
+var VIEW_TZ = lsGet('tz', null) || localZone();
+function parts(t, tz) {
+  var f = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', weekday: 'short' });
+  var o = {}; f.formatToParts(new Date(t)).forEach(function (p) { o[p.type] = p.value; });
+  return { y: +o.year, mo: +o.month, d: +o.day, h: (+o.hour) % 24, mi: +o.minute, iso: o.year + '-' + o.month + '-' + o.day, wd: o.weekday };
+}
+function offsetOf(tz, t) { var p = parts(t, tz); return Date.UTC(p.y, p.mo - 1, p.d, p.h, p.mi) - Math.floor(t / 60000) * 60000; }
+/* a wall-clock day and minute in a zone, to a moment */
+function at(iso, mins, tz) {
+  var y = +iso.slice(0, 4), mo = +iso.slice(5, 7), d = +iso.slice(8, 10);
+  var guess = Date.UTC(y, mo - 1, d, Math.floor(mins / 60), mins % 60);
+  var t = guess - offsetOf(tz, guess);
+  var t2 = guess - offsetOf(tz, t);
+  return t2;
+}
+function fmtTime(t, tz) { return new Date(t).toLocaleTimeString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit' }); }
+function fmtDay(t, tz, long) { return new Date(t).toLocaleDateString('en-US', { timeZone: tz, weekday: long ? 'long' : 'short', month: long ? 'long' : 'short', day: 'numeric' }); }
+function fmtRange(s, e, tz) {
+  var a = fmtTime(s, tz), b = fmtTime(e, tz);
+  if (a.slice(-2) === b.slice(-2)) a = a.slice(0, -3);
+  return a + '–' + b;
+}
+function tzAbbr(t, tz) { try { return new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'short' }).formatToParts(new Date(t)).find(function (p) { return p.type === 'timeZoneName'; }).value; } catch (e) { return ''; } }
+function slotLabel(sl, tz, long) { tz = tz || VIEW_TZ; return fmtDay(sl.s, tz, long) + ', ' + fmtRange(sl.s, sl.e, tz) + ' ' + tzAbbr(sl.s, tz); }
+function todayISO(tz) { return parts(Date.now(), tz || ET).iso; }
+function isoAdd(iso, n) { var d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+function dow(iso) { return new Date(iso + 'T12:00:00Z').getUTCDay(); }
+function isWeekend(iso) { var w = dow(iso); return w === 0 || w === 6; }
+/* business days after a moment, counted on MISMO's (Eastern) calendar */
+function addBiz(t, n) { var iso = parts(t, ET).iso; while (n > 0) { iso = isoAdd(iso, 1); if (!isWeekend(iso)) n--; } return iso; }
+function bizDaysAhead(n, fromIso) { var out = [], iso = fromIso || todayISO(VIEW_TZ); while (out.length < n) { iso = isoAdd(iso, 1); if (!isWeekend(iso)) out.push(iso); } return out; }
+function dayWord(iso) { var t = todayISO(ET); if (iso === t) return 'today'; if (iso === isoAdd(t, 1)) return 'tomorrow'; if (iso < t) return new Date(iso + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' }); return new Date(iso + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' }); }
+function whenAgo(t) { var m = Math.round((Date.now() - t) / 60000); if (m < 1) return 'just now'; if (m < 60) return m + ' min ago'; var h = Math.round(m / 60); if (h < 24) return h + (h === 1 ? ' hour ago' : ' hours ago'); return fmtDay(t, VIEW_TZ) + ' ' + fmtTime(t, VIEW_TZ); }
+
+/* ---------------- the session ---------------- */
+function RS() { return window.ResourcesSession || null; }
+function me() {
+  if (PREVIEW) return { email: 'vrios@mismo.org', name: 'Vanessa Rios' };
+  var s = RS() && RS().current(); return s ? { email: String(s.email || '').toLowerCase(), name: s.name || s.email } : { email: '', name: '' };
+}
+function canEdit() { return PREVIEW || !!(RS() && RS().canEdit(PROJECT)); }
+
+/* ---------------- talking to the relay ---------------- */
+function err(code, msg, status) { var e = new Error(msg || code); e.code = code; e.status = status || 0; return e; }
+function call(proj, path, method, body, noAuth) {
+  var headers = {};
+  if (!noAuth) {
+    var tok = RS() && RS().token();
+    if (!tok) return Promise.reject(err('SIGNED_OUT', 'Your sign-in has ended.', 401));
+    headers.Authorization = 'Bearer ' + tok;
+  }
+  if (body) headers['Content-Type'] = 'application/json';
+  return fetch(RELAY_URL + '/' + proj + path, { method: method, cache: 'no-store', headers: headers, body: body ? JSON.stringify(body) : undefined })
+    .then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (b) {
+        if (r.ok) return b;
+        var e = err((b && b.error) || ('HTTP_' + r.status), b && b.message, r.status); e.body = b; throw e;
+      });
+    }, function () { throw err('OFFLINE', 'Could not reach resources.mismo.org', 0); });
+}
+function readData(proj, name) { return call(proj, '/data/' + encodeURIComponent(name), 'GET'); }
+function writeData(proj, name, content, sha) { return call(proj, '/data/' + encodeURIComponent(name), 'PUT', { content: content, sha: sha || null }); }
+function noAccess(e) {
+  if (e && (e.code === 'NO_ACCESS' || e.status === 403) && RS()) RS().signIn({ reason: 'no-access', toolName: TOOL, gated: true });
+}
+
+/* ---------------- the requests: read, keep, save ---------------- */
+var DB = { server: { docs: {} }, sha: null, loaded: false, pending: {}, flushing: false, timer: null, problem: '' };
+function docs() {
+  var all = Object.assign({}, DB.server.docs || {});
+  Object.keys(DB.pending).forEach(function (id) { if (DB.pending[id] === null) delete all[id]; else all[id] = DB.pending[id]; });
+  return all;
+}
+function getReq(id) { return docs()[id] || null; }
+function allReqs() { var d = docs(); return Object.keys(d).map(function (k) { return d[k]; }); }
+function saveState(text, bad) { var s = $('#savestate'); if (s) { s.textContent = text || ''; s.style.color = bad ? 'var(--bad)' : ''; } }
+function loadReqs() {
+  if (PREVIEW) { DB.loaded = true; return Promise.resolve(); }
+  return readData(PROJECT, 'requests').then(function (b) {
+    var c = b && b.data && typeof b.data === 'object' ? b.data : {};
+    var before = JSON.stringify(DB.server.docs);
+    DB.server = Object.assign({}, c, { docs: c.docs && typeof c.docs === 'object' ? c.docs : {} });
+    DB.sha = (b && b.sha) || null; DB.loaded = true;
+    restoreUnsaved();
+    return before !== JSON.stringify(DB.server.docs);
+  }, function (e) { noAccess(e); throw e; });
+}
+function put(req, why) {
+  if (!canEdit()) { toast('You can look at the Scheduler but not change it. Ask Perry for Edit access.'); return Promise.reject(err('VIEW_ONLY')); }
+  req.updatedAt = Date.now(); req.updatedBy = me().name;
+  if (why) { req.log = req.log || []; req.log.push({ at: Date.now(), by: me().name, what: why }); if (req.log.length > 80) req.log = req.log.slice(-80); }
+  DB.pending[req.id] = clone(req);
+  keepUnsaved();
+  render();
+  if (PREVIEW) { DB.server.docs[req.id] = clone(req); delete DB.pending[req.id]; saveState('Preview · nothing is saved'); afterSave([req.id]); return Promise.resolve(); }
+  saveState('Saving…');
+  clearTimeout(DB.timer); DB.timer = setTimeout(flush, 250);
+  return Promise.resolve();
+}
+function drop(id) { DB.pending[id] = null; keepUnsaved(); if (PREVIEW) { delete DB.server.docs[id]; delete DB.pending[id]; } else { clearTimeout(DB.timer); DB.timer = setTimeout(flush, 250); } render(); }
+function keepUnsaved() { if (!PREVIEW) lsSet('unsaved:' + me().email, Object.keys(DB.pending).length ? DB.pending : null); }
+function restoreUnsaved() {
+  var kept = lsGet('unsaved:' + me().email, null);
+  if (kept && !Object.keys(DB.pending).length) { DB.pending = kept; saveState('Finishing an earlier save…'); clearTimeout(DB.timer); DB.timer = setTimeout(flush, 800); }
+}
+var chain = Promise.resolve();
+function flush() {
+  if (DB.flushing || !Object.keys(DB.pending).length) return;
+  if (!(RS() && RS().token())) {
+    saveState('Sign in to finish saving', true);
+    RS() && RS().signIn({ reason: 'expired' }).then(function () { flush(); }, function () { saveState('Not saved — you are signed out. Your change is kept on this computer.', true); });
+    return;
+  }
+  DB.flushing = true;
+  var batch = clone(DB.pending), ids = Object.keys(batch), tries = 0;
+  function attempt() {
+    var next = Object.assign({}, DB.server, { docs: Object.assign({}, DB.server.docs) });
+    delete next.savedBy; delete next.savedAt;
+    ids.forEach(function (id) { if (batch[id] === null) delete next.docs[id]; else next.docs[id] = batch[id]; });
+    if (JSON.stringify(next).length > 940000) return Promise.reject(err('TOO_BIG', 'The Scheduler’s file is nearly full. Ask Perry to archive old requests.'));
+    return writeData(PROJECT, 'requests', next, DB.sha).then(function (b) {
+      DB.server = next; DB.sha = (b && b.sha) || DB.sha;
+      ids.forEach(function (id) { if (JSON.stringify(DB.pending[id]) === JSON.stringify(batch[id])) delete DB.pending[id]; });
+      keepUnsaved();
+    }, function (e) {
+      if (e.status === 409 && tries < 6) { tries++; return new Promise(function (r) { setTimeout(r, 300 * tries + Math.random() * 400); }).then(loadReqs).then(attempt); }
+      throw e;
+    });
+  }
+  chain = chain.then(attempt).then(function () {
+    DB.flushing = false; DB.problem = '';
+    saveState('Saved ' + fmtTime(Date.now(), VIEW_TZ));
+    afterSave(ids);
+    if (Object.keys(DB.pending).length) flush();
+  }, function (e) {
+    DB.flushing = false;
+    if (e.status === 401 || e.code === 'SIGNED_OUT') { flush(); return; }
+    noAccess(e);
+    var msg = e.code === 'OFFLINE' ? 'Not saved yet — no connection. It will try again.' :
+      e.code === 'UNKNOWN_PROJECT' ? 'Saving is not switched on for the Scheduler yet (Perry: see the README).' :
+      'Not saved yet (' + (e.message || e.code) + '). It will try again.';
+    DB.problem = msg; saveState(msg, true);
+    if (e.code !== 'UNKNOWN_PROJECT' && e.code !== 'NO_ACCESS') setTimeout(flush, 15000);
+    render();
+  });
+}
+/* other people's changes: the relay has no push, so look again while the page is in use */
+setInterval(function () {
+  if (PREVIEW || document.hidden || DB.flushing || Object.keys(DB.pending).length || !DB.loaded) return;
+  Promise.all([loadReqs(), typeof loadInbox === 'function' ? loadInbox() : false]).then(function (ch) { if (ch[0] || ch[1]) render(); }, function () {});
+}, 45000);
+window.addEventListener('beforeunload', function (e) { if (Object.keys(DB.pending).length && !PREVIEW) { e.preventDefault(); e.returnValue = ''; } });
+
+/* ---------------- the team (from Team HQ) ---------------- */
+/* Only used if Team HQ's own list can't be read; Team HQ's list always wins. */
+var FALLBACK_PEOPLE = [
+  { id: 'brian', name: 'Brian Vieaux', role: 'President', email: 'bvieaux@mismo.org' },
+  { id: 'jonathan', name: 'Jonathan Kearns', role: 'VP, Programs and Operations', email: 'jkearns@mismo.org' },
+  { id: 'amy', name: 'Amy Moses', role: 'VP, Strategic Growth', email: 'amoses@mismo.org' },
+  { id: 'kelly', name: 'Kelly Bradshaw', role: 'Director, Strategic Growth', email: 'kbradshaw@mismo.org' },
+  { id: 'jonna', name: 'Jonna Critchley', role: 'Director, Programs and Operations', email: 'jcritchley@mismo.org' },
+  { id: 'perry', name: 'Perry Williams', role: 'Sr. Program Manager', email: 'pwilliams@mismo.org' },
+  { id: 'vanessa', name: 'Vanessa Rios', role: 'Sr. Systems and Operations Specialist', email: 'vrios@mismo.org' }
+];
+var TEAM = { people: FALLBACK_PEOPLE.slice(), cal: {}, calAt: 0, hqOk: false };
+function person(id) { return TEAM.people.find(function (p) { return p.id === id; }) || null; }
+function personByName(n) { n = String(n || '').toLowerCase().trim(); return TEAM.people.find(function (p) { return p.name.toLowerCase() === n; }) || null; }
+function personByEmail(e) { e = String(e || '').toLowerCase().trim(); return TEAM.people.find(function (p) { return (p.email || '').toLowerCase() === e; }) || null; }
+function emailOf(p) {
+  if (!p) return '';
+  if (p.email) return p.email;
+  var f = FALLBACK_PEOPLE.find(function (x) { return x.id === p.id || x.name === p.name; });
+  return f ? f.email : '';
+}
+function meP() { var m = me(); return personByEmail(m.email) || personByName(m.name); }
+function loadTeam() {
+  if (PREVIEW) { TEAM.hqOk = true; TEAM.cal = previewCalendars(); TEAM.calAt = Date.now(); return Promise.resolve(); }
+  return readData(HQ, 'people').then(function (b) {
+    var d = (b && b.data && b.data.docs) || {};
+    var list = Object.keys(d).map(function (k) { var p = d[k]; return Object.assign({ id: p.id || k }, p); })
+      .filter(function (p) { return p && p.name && !p.left && !p.gone && String(p.status || '') !== 'gone'; });
+    if (list.length) {
+      list.forEach(function (p) { if (!p.email) p.email = emailOf(p); });
+      TEAM.people = list.sort(function (a, b) { return (a.order || 0) - (b.order || 0) || a.name.localeCompare(b.name); });
+    }
+    TEAM.hqOk = true;
+  }, function () { TEAM.hqOk = false; }).then(loadCalendars);
+}
+/* Outlook availability, as Team HQ reads it: times in UTC, Free and "working elsewhere" ignored */
+function calTime(v) { var s = String(v || '').trim(); if (!s) return null; if (!/[zZ]|[+-]\d\d:?\d\d$/.test(s)) s += 'Z'; var t = Date.parse(s); return isNaN(t) ? null : t; }
+function calEv(x) {
+  if (!x) return null;
+  var show = String(x.show || x.showAs || '').toLowerCase();
+  if (!show || show === 'free' || show === 'workingelsewhere') return null;
+  var av = x.allDay !== undefined ? x.allDay : x.isAllDay, all = av === true || String(av).toLowerCase() === 'true';
+  if (all) { var d0 = String(x.s || x.start || '').slice(0, 10), d1 = String(x.e || x.end || '').slice(0, 10); return { s: at(d0, 0, ET), e: at(d1, 0, ET), show: show, t: String(x.title || x.t || '').slice(0, 80), all: 1 }; }
+  var s = calTime(x.s || x.start), e = calTime(x.e || x.end); if (s == null || e == null) return null;
+  return { s: s, e: e, show: show, t: String(x.title || x.t || '').trim().slice(0, 80) };
+}
+function loadCalendars(force) {
+  if (PREVIEW) return Promise.resolve();
+  if (!force && TEAM.calAt && Date.now() - TEAM.calAt < 10 * 60000) return Promise.resolve();
+  return Promise.all(TEAM.people.map(function (p) {
+    return readData(HQ, 'cal-' + p.id).then(function (b) { return [p.id, b && b.data]; }, function () { return [p.id, null]; });
+  })).then(function (list) {
+    var by = {};
+    list.forEach(function (x) { var d = x[1]; if (d && Array.isArray(d.ev) && d.ev.length) by[x[0]] = d.ev.map(calEv).filter(Boolean); });
+    TEAM.cal = by; TEAM.calAt = Date.now();
+  });
+}
+function hasCal(pid) { return !!TEAM.cal[pid]; }
+/* 'free' | 'busy' | 'tentative' | 'oof' | null (Outlook not connected) for a person over a stretch of time */
+function calState(pid, s, e) {
+  var list = TEAM.cal[pid]; if (!list) return null;
+  var hit = list.filter(function (x) { return x.s < e && x.e > s; });
+  if (!hit.length) return 'free';
+  if (hit.some(function (x) { return x.show === 'oof'; })) return 'oof';
+  if (hit.some(function (x) { return x.show === 'busy'; })) return 'busy';
+  return 'tentative';
+}
+function calWhat(pid, s, e) { var list = TEAM.cal[pid] || []; var h = list.filter(function (x) { return x.s < e && x.e > s; }); return h.map(function (x) { return x.t || (x.show === 'oof' ? 'Out of office' : 'Busy'); }).join(', '); }
+
+/* ---------------- Team HQ: one follow-up task per request ---------------- */
+var HQ_TASK_PREFIX = 'sched-';
+function hqTaskFor(req) {
+  var owner = personByEmail(req.owner) || personByName(req.ownerName);
+  if (!owner) return null;
+  var open = req.status !== 'booked' && req.status !== 'cancelled';
+  var waiting = (req.guests || []).filter(function (g) { return g.sentAt && !g.answer; });
+  var due = waiting.map(function (g) { return followDue(req, g); }).sort()[0] || '';
+  var names = waiting.map(function (g) { return g.name || g.email; });
+  return {
+    id: HQ_TASK_PREFIX + req.id, o: owner.id,
+    t: 'Follow up: ' + (req.title || 'meeting request'),
+    s: open && waiting.length ? 'Waiting on Someone' : 'Done',
+    due: open && waiting.length ? due : '',
+    notes: open && waiting.length
+      ? 'Still waiting to hear from ' + names.join(', ') + '. Open it in the Scheduler to draft a follow-up: ' + SITE + '#r=' + req.id
+      : 'Everyone has answered or the meeting is booked. ' + SITE + '#r=' + req.id,
+    p: 'Normal', d: [], r: '', w: '', rail: 0
+  };
+}
+var hqChain = Promise.resolve();
+function syncHqTasks(ids) {
+  if (PREVIEW || !TEAM.hqOk) return;
+  var wants = ids.map(getReq).filter(Boolean).map(function (r) { return { r: r, t: hqTaskFor(r) }; }).filter(function (x) { return x.t; });
+  if (!wants.length) return;
+  hqChain = hqChain.then(function () {
+    var tries = 0;
+    function go() {
+      return readData(HQ, 'tasks').then(function (b) {
+        var c = (b && b.data && typeof b.data === 'object') ? b.data : {}; var cur = c.docs || {};
+        var changed = false, next = Object.assign({}, c, { docs: Object.assign({}, cur) });
+        delete next.savedBy; delete next.savedAt;
+        wants.forEach(function (x) {
+          var had = cur[x.t.id];
+          /* never open a task for a request nobody has been asked about yet */
+          if (!had && x.t.s === 'Done') return;
+          var merged = Object.assign({ at: Date.now(), by: x.t.o, ord: 99990 }, had || {}, x.t);
+          if (had && had.s === 'Done' && x.t.s === 'Done') return;
+          if (had && ['t', 's', 'due', 'notes', 'o'].every(function (k) { return had[k] === merged[k]; })) return;
+          next.docs[x.t.id] = merged; changed = true;
+        });
+        if (!changed) return;
+        return writeData(HQ, 'tasks', next, b && b.sha).catch(function (e) {
+          if (e.status === 409 && tries < 5) { tries++; return new Promise(function (r) { setTimeout(r, 400 * tries); }).then(go); }
+          throw e;
+        });
+      });
+    }
+    return go();
+  }).catch(function (e) { console.warn('Team HQ reminder not updated:', e && (e.code || e.message)); });
+}
+function afterSave(ids) { syncHqTasks(ids); }
+
+/* ---------------- asking Claude (the relay's Ask route; the key stays in the relay) ---------------- */
+var ASK = { ready: null };
+function askReady() {
+  if (PREVIEW) { ASK.ready = false; return Promise.resolve(false); }
+  if (ASK.ready !== null) return Promise.resolve(ASK.ready);
+  return call(PROJECT, '/ask', 'POST', { prompt: '' }).then(function () { ASK.ready = true; return true; }, function (e) { ASK.ready = e.code === 'NO_PROMPT'; return ASK.ready; });
+}
+function ask(prompt) { return call(PROJECT, '/ask', 'POST', { prompt: prompt }).then(function (b) { return String((b && b.text) || ''); }); }
+function jsonIn(text) { var a = text.indexOf('{'), b = text.lastIndexOf('}'); if (a < 0 || b < a) return null; try { return JSON.parse(text.slice(a, b + 1)); } catch (e) { return null; } }
+
+/* ---------------- outside links: on once the relay has the two public routes ---------------- */
+var LINKS = { live: null };
+function linksLive() {
+  if (PREVIEW) { LINKS.live = true; return Promise.resolve(true); }
+  if (LINKS.live !== null) return Promise.resolve(LINKS.live);
+  return call(PROJECT, '/poll/ready', 'GET', null, true).then(function (b) { LINKS.live = !!(b && b.ok); return LINKS.live; }, function () { LINKS.live = false; return false; });
+}
+function guestLink(req, g) { return SITE + 'respond.html' + (PREVIEW ? '?preview=1' : '') + '#r=' + req.id + '&g=' + g.id + '.' + g.code; }
+
+/* ---------------- a request's state ---------------- */
+function followDue(req, g) {
+  var last = Math.max(g.sentAt || 0, (g.followUps || []).reduce(function (a, b) { return Math.max(a, b); }, 0));
+  return addBiz(last, +req.followDays || DEFAULT_FOLLOW_DAYS);
+}
+function guestState(req, g) {
+  if (g.answer) return 'answered';
+  if (!g.sentAt) return 'unsent';
+  if (req.status === 'booked' || req.status === 'cancelled') return 'closed';
+  return followDue(req, g) <= todayISO(ET) ? 'due' : 'waiting';
+}
+function phase(req) {
+  if (req.status === 'cancelled') return 'cancelled';
+  if (req.status === 'booked') return 'booked';
+  var gs = req.guests || [];
+  if (!(req.slots || []).length) return 'draft';
+  if (gs.length && !gs.some(function (g) { return g.sentAt || g.answer; })) return 'draft';
+  if (gs.every(function (g) { return g.answer; })) return 'ready';
+  return 'collecting';
+}
+var PHASE = {
+  draft: { n: 'Getting ready', c: 'p-draft' }, collecting: { n: 'Waiting on replies', c: 'p-collect' },
+  ready: { n: 'Ready to book', c: 'p-ready' }, booked: { n: 'Booked', c: 'p-booked' }, cancelled: { n: 'Cancelled', c: 'p-cancel' }
+};
+function phasePill(req) { var p = PHASE[phase(req)]; return '<span class="pill ' + p.c + '">' + p.n + '</span>'; }
+function slotById(req, id) { return (req.slots || []).find(function (s) { return s.id === id; }) || null; }
+/* everyone's answer for one time: 'yes' | 'maybe' | 'no' | null */
+function internalAnswer(req, pid, sl) {
+  var hand = req.internalAns && req.internalAns[pid] && req.internalAns[pid][sl.id];
+  if (hand) return { v: hand, hand: 1 };
+  var c = calState(pid, sl.s, sl.e);
+  if (c === null) return { v: null };
+  return { v: c === 'free' ? 'yes' : c === 'tentative' ? 'maybe' : 'no', cal: 1, what: c === 'free' ? '' : calWhat(pid, sl.s, sl.e) };
+}
+function guestAnswer(g, sl) {
+  if (!g.answer) return null;
+  if ((g.answer.yes || []).indexOf(sl.id) >= 0) return 'yes';
+  if ((g.answer.maybe || []).indexOf(sl.id) >= 0) return 'maybe';
+  return 'no';
+}
+function score(req, sl) {
+  var s = 0, yes = 0, no = 0, maybe = 0, none = 0;
+  (req.internal || []).forEach(function (pid) { var a = internalAnswer(req, pid, sl).v; if (a === 'yes') yes++; else if (a === 'maybe') maybe++; else if (a === 'no') no++; else none++; });
+  (req.guests || []).forEach(function (g) { var a = guestAnswer(g, sl); if (a === 'yes') yes++; else if (a === 'maybe') maybe++; else if (a === 'no') no++; else none++; });
+  s = yes * 3 + maybe - no * 6;
+  return { s: s, yes: yes, maybe: maybe, no: no, none: none };
+}
+function bestSlot(req) {
+  var sl = (req.slots || []).filter(function (x) { return x.s > Date.now(); });
+  if (!sl.length) return null;
+  var ranked = sl.map(function (x) { return { sl: x, sc: score(req, x) }; }).sort(function (a, b) { return b.sc.s - a.sc.s || a.sl.s - b.sl.s; });
+  return ranked[0].sc.yes ? ranked[0] : null;
+}
+function followList(mineOnly) {
+  var m = me(), out = [];
+  allReqs().forEach(function (r) {
+    if (mineOnly && String(r.owner || '').toLowerCase() !== m.email) return;
+    if (r.status === 'booked' || r.status === 'cancelled') return;
+    (r.guests || []).forEach(function (g) {
+      var st = guestState(r, g); if (st !== 'due' && st !== 'waiting') return;
+      out.push({ r: r, g: g, due: followDue(r, g), st: st });
+    });
+  });
+  return out.sort(function (a, b) { return a.due.localeCompare(b.due); });
+}
+
+/* ======================================================================
+   SCREENS
+   ====================================================================== */
+var STATE = { tab: 'follow', reqId: null, fuMine: lsGet('fuMine', true), listMine: lsGet('listMine', false), listShow: lsGet('listShow', 'active') };
+function readHash() {
+  var h = location.hash.replace(/^#/, ''), m = /(?:^|&)r=([a-z0-9]+)/.exec(h), t = /(?:^|&)tab=([a-z]+)/.exec(h);
+  STATE.reqId = m ? m[1] : null;
+  if (t && ['inbox', 'follow', 'list', 'new', 'help'].indexOf(t[1]) >= 0) STATE.tab = t[1];
+}
+function go(tab, reqId) {
+  STATE.tab = tab || STATE.tab; STATE.reqId = reqId || null;
+  var h = reqId ? '#r=' + reqId : '#tab=' + STATE.tab;
+  if (location.hash !== h) history.pushState(null, '', h);
+  render({ full: true }); window.scrollTo(0, 0);
+}
+window.addEventListener('popstate', function () { readHash(); render({ full: true }); });
+window.addEventListener('hashchange', function () { readHash(); render({ full: true }); });
+
+function render(opts) {
+  var app = $('#app'); if (!app) return;
+  var fu = followList(true).filter(function (x) { return x.st === 'due'; }).length;
+  var c = $('#fu-count'); c.textContent = fu; c.classList.toggle('hot', fu > 0);
+  var ic = $('#in-count'), inN = inboxNew().length; ic.textContent = inN; ic.classList.toggle('hot', inN > 0);
+  document.title = (fu + inN ? '(' + (fu + inN) + ') ' : '') + 'Scheduler';
+  /* never wipe a half-filled New Request form because something changed in the background */
+  if (!(opts && opts.full) && !STATE.reqId && STATE.tab === 'new' && $('#f-title', app)) return;
+  $$('.tab').forEach(function (b) { b.setAttribute('aria-selected', String(!STATE.reqId && b.dataset.tab === STATE.tab)); });
+  var keepFocus = document.activeElement && document.activeElement.id;
+  app.innerHTML = '';
+  if (PREVIEW) app.appendChild(el('div', 'preview-band', '<b>Preview.</b> This is the Scheduler with sample data (made-up example requests). Nothing you do here is saved or sent. On resources.mismo.org it uses your team’s real data and Outlook availability.'));
+  if (DB.problem) app.appendChild(el('div', 'notice bad', esc(DB.problem)));
+  if (!DB.loaded) { app.appendChild(el('div', 'empty', '<span class="spinner"></span> Loading…')); return; }
+  if (STATE.reqId) { var r = getReq(STATE.reqId); if (r) viewDetail(app, r); else { app.appendChild(el('div', 'empty', 'That request isn’t here any more. <button class="linkbtn" type="button">See all requests</button>')); $('.linkbtn', app).onclick = function () { go('list'); }; } }
+  else ({ inbox: viewInbox, follow: viewFollow, list: viewList, 'new': viewNew, help: viewHelp })[STATE.tab](app);
+  if (keepFocus && document.getElementById(keepFocus)) try { document.getElementById(keepFocus).focus(); } catch (e) {}
+}
+$$('.tab').forEach(function (b) { b.addEventListener('click', function () { go(b.dataset.tab); }); });
+
+function seg(options, value, onPick) {
+  var s = el('div', 'seg'); s.setAttribute('role', 'group');
+  options.forEach(function (o) { var b = el('button', null, esc(o[1])); b.type = 'button'; b.setAttribute('aria-pressed', String(o[0] === value)); b.onclick = function () { onPick(o[0]); }; s.appendChild(b); });
+  return s;
+}
+function btn(label, cls, onClick, icon) { var b = el('button', 'btn ' + (cls || ''), (icon ? ICON[icon] : '') + '<span>' + esc(label) + '</span>'); b.type = 'button'; if (onClick) b.onclick = onClick; return b; }
+function personChip(name, tag, color) { return '<span class="chip"><span class="av"' + (color ? ' style="background:' + color + '"' : '') + '>' + esc(initials(name)) + '</span>' + esc(name) + (tag ? ' <span class="tag">' + esc(tag) + '</span>' : '') + '</span>'; }
+
+/* ---------------- Follow Up ---------------- */
+function viewFollow(app) {
+  var head = el('div', 'pagehead');
+  head.innerHTML = '<div class="grow"><h1>Follow Up</h1><p>People you asked about times and haven’t heard back from. Each one comes due a few business days after you last wrote to them (3 unless you change it on the request).</p></div>';
+  head.appendChild(seg([[true, 'Mine'], [false, 'Everyone’s']], STATE.fuMine, function (v) { STATE.fuMine = v; lsSet('fuMine', v); render(); }));
+  app.appendChild(head);
+  var list = followList(STATE.fuMine), due = list.filter(function (x) { return x.st === 'due'; }), soon = list.filter(function (x) { return x.st === 'waiting'; });
+  var p1 = el('section', 'panel');
+  p1.innerHTML = '<div class="panel-h"><h2>Follow up now</h2><span class="sub">' + (due.length ? due.length + (due.length === 1 ? ' person' : ' people') : 'nobody') + '</span></div>';
+  var b1 = el('div', 'panel-b'); p1.appendChild(b1);
+  if (!due.length) b1.appendChild(el('div', 'empty', 'Nobody is overdue.'));
+  else { var l1 = el('div', 'fu-list'); due.forEach(function (x) { l1.appendChild(fuCard(x)); }); b1.appendChild(l1); }
+  app.appendChild(p1);
+  var p2 = el('section', 'panel');
+  p2.innerHTML = '<div class="panel-h"><h2>Still waiting, not due yet</h2><span class="sub">' + soon.length + '</span></div>';
+  var b2 = el('div', 'panel-b'); p2.appendChild(b2);
+  if (!soon.length) b2.appendChild(el('div', 'empty', 'No one else is pending.'));
+  else { var l2 = el('div', 'fu-list'); soon.forEach(function (x) { l2.appendChild(fuCard(x)); }); b2.appendChild(l2); }
+  app.appendChild(p2);
+  var n = el('div', 'notice');
+  n.innerHTML = '<b>Where else these reminders show up.</b> Every request that’s waiting on replies also puts a <b>“Follow up: …”</b> task on the organizer’s Team HQ board, due on the follow-up day. It’s ticked off by itself once everyone answers or the meeting is booked.';
+  if ('Notification' in window && Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+    var nb = el('button', 'linkbtn', 'Also pop up a desktop alert while this page is open'); nb.type = 'button';
+    nb.onclick = function () { Notification.requestPermission().then(function () { render(); }); };
+    n.appendChild(el('div', null, '')).appendChild(nb);
+  }
+  app.appendChild(n);
+}
+function fuCard(x) {
+  var r = x.r, g = x.g, c = el('div', 'fu' + (x.st === 'due' ? '' : ' soon'));
+  var asked = Math.max(g.sentAt || 0, (g.followUps || []).slice(-1)[0] || 0);
+  var nf = (g.followUps || []).length;
+  c.innerHTML = '<div class="who"><b>' + esc(g.name || g.email) + (g.org ? ' <span class="muted" style="font-weight:400">· ' + esc(g.org) + '</span>' : '') + '</b>' +
+    '<span>' + esc(r.title) + ' · ' + (nf ? 'followed up ' + nf + (nf === 1 ? ' time' : ' times') + ', last ' : 'asked ') + esc(fmtDay(asked, VIEW_TZ)) +
+    ' · <b style="display:inline;color:' + (x.st === 'due' ? 'var(--bad)' : 'var(--warn)') + '">follow up ' + esc(dayWord(x.due)) + '</b>' +
+    (STATE.fuMine ? '' : ' · ' + esc(first(r.ownerName)) + '’s') + '</span></div>';
+  var a = el('div', 'acts');
+  if (canEdit()) {
+    a.appendChild(btn('Draft follow-up email', 'sm', function () { openDraft(r, 'follow', [g.id]); }, 'spark'));
+    a.appendChild(btn('I followed up', 'sm ghost', function () { markFollowed(r, [g.id]); }, 'check'));
+    a.appendChild(btn('Enter their answer', 'sm ghost', function () { openAnswer(r, g); }, 'pen'));
+  }
+  a.appendChild(btn('Open', 'sm ghost', function () { go(null, r.id); }));
+  c.appendChild(a);
+  return c;
+}
+function sentOn(t) { return parts(t, ET).iso === todayISO(ET) ? '' : ' (sent ' + fmtDay(t, ET) + ')'; }
+function markFollowed(r0, gids) {
+  askDate({ title: 'When did you follow up?', lead: 'Pick the day you followed up. The next reminder counts from that day.', days: getReq(r0.id).followDays, ok: 'Save' }).then(function (when) {
+    if (!when) return;
+    var r = clone(getReq(r0.id)), names = [];
+    (r.guests || []).forEach(function (g) { if (gids.indexOf(g.id) >= 0) { g.followUps = (g.followUps || []).concat(when); names.push(g.name || g.email); } });
+    put(r, 'Followed up with ' + names.join(', ') + sentOn(when));
+    toast('Got it. If they still don\u2019t answer, you\u2019ll be reminded again on ' + dayWord(addBiz(when, r.followDays || DEFAULT_FOLLOW_DAYS)) + '.');
+  });
+}
+/* fix the day an email went out: the first ask, or the latest follow-up */
+function changeSentDate(req, g) {
+  var isFollow = (g.followUps || []).length > 0;
+  var last = isFollow ? g.followUps[g.followUps.length - 1] : g.sentAt;
+  askDate({ title: isFollow ? 'When did you last follow up with ' + first(g.name) + '?' : 'When did you ask ' + first(g.name) + '?', def: last, days: req.followDays, ok: 'Save' }).then(function (when) {
+    if (!when) return;
+    var r = clone(getReq(req.id));
+    r.guests.forEach(function (x) { if (x.id !== g.id) return; if (isFollow) x.followUps[x.followUps.length - 1] = when; else x.sentAt = when; });
+    put(r, 'Changed the ' + (isFollow ? 'follow-up' : 'sent') + ' date for ' + (g.name || g.email) + ' to ' + fmtDay(when, ET));
+  });
+}
+
+/* ---------------- Requests ---------------- */
+function viewList(app) {
+  var head = el('div', 'pagehead');
+  head.innerHTML = '<div class="grow"><h1>Meeting Requests</h1><p>Every meeting being scheduled, by anyone on the team.</p></div>';
+  if (canEdit()) head.appendChild(btn('New Request', 'big', function () { go('new'); }, 'plus'));
+  app.appendChild(head);
+  var f = el('div', 'filters');
+  f.appendChild(seg([[false, 'Everyone’s'], [true, 'Mine']], STATE.listMine, function (v) { STATE.listMine = v; lsSet('listMine', v); render(); }));
+  f.appendChild(seg([['active', 'In progress'], ['booked', 'Booked'], ['all', 'All']], STATE.listShow, function (v) { STATE.listShow = v; lsSet('listShow', v); render(); }));
+  app.appendChild(f);
+  var m = me().email;
+  var list = allReqs().filter(function (r) {
+    if (STATE.listMine && String(r.owner || '').toLowerCase() !== m) return false;
+    var ph = phase(r);
+    if (STATE.listShow === 'active') return ph !== 'booked' && ph !== 'cancelled';
+    if (STATE.listShow === 'booked') return ph === 'booked';
+    return true;
+  }).sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); });
+  if (!list.length) { app.appendChild(el('div', 'panel', '<div class="empty">Nothing here yet.' + (canEdit() ? ' Start one with <b>New Request</b>.' : '') + '</div>')); return; }
+  var g = el('div', 'reqs');
+  list.forEach(function (r) {
+    var c = el('button', 'req'); c.type = 'button';
+    var gs = r.guests || [], ans = gs.filter(function (x) { return x.answer; }).length;
+    var due = (gs.filter(function (x) { return guestState(r, x) === 'due'; })).length;
+    var who = (r.internal || []).map(function (id) { var p = person(id); return p ? first(p.name) : id; }).concat(gs.map(function (x) { return x.name || x.email; }));
+    var chosen = r.status === 'booked' && slotById(r, r.chosen);
+    c.innerHTML = '<div class="line">' + phasePill(r) + (due ? '<span class="pill p-due">Follow up</span>' : '') + '<span class="muted" style="margin-left:auto">' + esc(first(r.ownerName)) + '</span></div>' +
+      '<h3>' + esc(r.title || 'Untitled meeting') + '</h3>' +
+      '<div class="line">' + esc(who.join(', ') || 'No one added yet') + '</div>' +
+      (chosen ? '<div class="line"><b style="color:var(--ink)">' + esc(slotLabel(chosen, VIEW_TZ, true)) + '</b></div>'
+        : gs.length ? '<div class="line"><span>' + ans + ' of ' + gs.length + ' outside ' + (gs.length === 1 ? 'guest has' : 'guests have') + ' answered</span></div><div class="bar"><i style="width:' + Math.round(100 * ans / gs.length) + '%"></i></div>'
+        : '<div class="line">' + (r.slots || []).length + ' times offered</div>');
+    c.onclick = function () { go(null, r.id); };
+    g.appendChild(c);
+  });
+  app.appendChild(g);
+}
+
+/* ---------------- New request (and editing one) ---------------- */
+function requestForm(req, onSave, onCancel) {
+  var isNew = !req;
+  req = req ? clone(req) : { id: rid(10), title: '', purpose: '', duration: 30, where: 'Zoom', followDays: DEFAULT_FOLLOW_DAYS, internal: [], guests: [], slots: [], owner: me().email, ownerName: me().name, createdAt: Date.now(), createdBy: me().name, source: '' };
+  var wrap = el('div');
+  if (isNew) {
+    var s1 = el('section', 'panel');
+    s1.innerHTML = '<div class="panel-h"><span class="step">1</span><h2>Got an email asking for a meeting?</h2><span class="sub">Optional — saves typing</span></div>' +
+      '<div class="panel-b"><label class="f"><span>Paste the email here <span class="hint">(in Outlook: open it, press Ctrl+A to select everything, Ctrl+C to copy, then click here and press Ctrl+V)</span></span><textarea id="f-src" rows="6" placeholder="Paste the whole email, including the From and To lines…"></textarea></label>' +
+      '<div class="grow-row" style="margin-top:10px"><span id="f-read-say" class="small muted"></span></div></div>';
+    var rb = btn('Read it for me', '', null, 'spark'); rb.id = 'f-read';
+    $('.grow-row', s1).insertBefore(rb, $('.grow-row', s1).firstChild);
+    wrap.appendChild(s1);
+  }
+  var s2 = el('section', 'panel');
+  s2.innerHTML = '<div class="panel-h">' + (isNew ? '<span class="step">2</span>' : '') + '<h2>The meeting</h2></div><div class="panel-b"><div class="form">' +
+    '<label class="f w8"><span>Meeting name</span><input type="text" id="f-title" maxlength="140" placeholder="e.g. MISMO Membership Info_Example Lending"></label>' +
+    '<label class="f w4"><span>How long</span><select id="f-dur"><option value="15">15 minutes</option><option value="30">30 minutes</option><option value="45">45 minutes</option><option value="60">1 hour</option><option value="90">90 minutes</option><option value="120">2 hours</option></select></label>' +
+    '<label class="f"><span>What it’s about <span class="hint">(goes into the emails Claude drafts)</span></span><textarea id="f-purpose" rows="3" maxlength="2000" placeholder="e.g. Walk Example Lending through MISMO membership benefits and next steps."></textarea></label>' +
+    '<label class="f w4"><span>Where</span><select id="f-where"><option>Zoom</option><option>Microsoft Teams</option><option>Phone</option><option>In person</option></select></label>' +
+    '<label class="f w4"><span>Organizer <span class="hint">(gets the reminders)</span></span><select id="f-owner"></select></label>' +
+    '<label class="f w4"><span>Remind me to follow up after</span><select id="f-follow"><option value="1">1 business day</option><option value="2">2 business days</option><option value="3">3 business days</option><option value="5">5 business days</option></select></label>' +
+    '<div class="f"><span>Who asked for it <span class="hint">(optional)</span></span><input type="text" id="f-asker" maxlength="120" placeholder="e.g. Kelly Bradshaw"></div>' +
+    '</div></div>';
+  wrap.appendChild(s2);
+  var s3 = el('section', 'panel');
+  s3.innerHTML = '<div class="panel-h">' + (isNew ? '<span class="step">3</span>' : '') + '<h2>Who’s coming from MISMO</h2><span class="sub">Their Outlook shows when they’re free</span></div><div class="panel-b"><div class="chips" id="f-int"></div></div>';
+  wrap.appendChild(s3);
+  var s4 = el('section', 'panel');
+  s4.innerHTML = '<div class="panel-h">' + (isNew ? '<span class="step">4</span>' : '') + '<h2>Who’s coming from outside MISMO</h2><span class="sub">They’ll mark the times that work for them</span></div><div class="panel-b"><div id="f-guests"></div></div>';
+  var addG = btn('Add another person', 'ghost sm', null, 'plus'); $('.panel-b', s4).appendChild(addG);
+  wrap.appendChild(s4);
+  var foot = el('div', 'grow-row');
+  var save = btn(isNew ? 'Save and pick times' : 'Save changes', 'big', null, isNew ? 'cal' : 'check');
+  foot.appendChild(save);
+  if (onCancel) foot.appendChild(btn('Cancel', 'ghost big', onCancel));
+  var say = el('span', 'small', ''); say.style.color = 'var(--bad)'; foot.appendChild(say);
+  wrap.appendChild(foot);
+
+  /* fill in */
+  $('#f-title', wrap).value = req.title || '';
+  $('#f-dur', wrap).value = String(req.duration || 30);
+  $('#f-purpose', wrap).value = req.purpose || '';
+  $('#f-where', wrap).value = req.where || 'Zoom';
+  $('#f-follow', wrap).value = String(req.followDays || DEFAULT_FOLLOW_DAYS);
+  $('#f-asker', wrap).value = req.askedBy || '';
+  var os = $('#f-owner', wrap);
+  var owners = TEAM.people.map(function (p) { return { v: (emailOf(p) || '').toLowerCase(), n: p.name }; }).filter(function (o) { return o.v; });
+  if (req.owner && !owners.some(function (o) { return o.v === req.owner.toLowerCase(); })) owners.unshift({ v: req.owner, n: req.ownerName || req.owner });
+  owners.forEach(function (o) { var op = el('option', null, esc(o.n)); op.value = o.v; os.appendChild(op); });
+  os.value = (req.owner || '').toLowerCase();
+  function paintInternal(sel) {
+    var box = $('#f-int', wrap); box.innerHTML = '';
+    TEAM.people.forEach(function (p) {
+      var l = el('label', 'pick');
+      l.innerHTML = '<input type="checkbox" value="' + esc(p.id) + '"' + (sel.indexOf(p.id) >= 0 ? ' checked' : '') + '>' + personChip(p.name, hasCal(p.id) ? 'Outlook ✓' : 'no Outlook');
+      box.appendChild(l);
+    });
+  }
+  paintInternal(req.internal || []);
+  function guestRow(g) {
+    var r = el('div', 'guest-row'); r.dataset.gid = g.id || '';
+    r.innerHTML = '<input type="text" class="g-name" placeholder="Name" maxlength="100" aria-label="Name"><input type="email" class="g-email" placeholder="Email" maxlength="200" aria-label="Email"><input type="text" class="g-org" placeholder="Company" maxlength="120" aria-label="Company">';
+    $('.g-name', r).value = g.name || ''; $('.g-email', r).value = g.email || ''; $('.g-org', r).value = g.org || '';
+    var x = el('button', 'btn ghost sm', 'Remove'); x.type = 'button'; x.onclick = function () { r.remove(); }; r.appendChild(x);
+    $('#f-guests', wrap).appendChild(r);
+  }
+  (req.guests.length ? req.guests : [{}]).forEach(guestRow);
+  addG.onclick = function () { guestRow({}); };
+
+  function apply(found) {
+    if (found.title) $('#f-title', wrap).value = found.title;
+    if (found.purpose) $('#f-purpose', wrap).value = found.purpose;
+    if (found.duration) $('#f-dur', wrap).value = String([15, 30, 45, 60, 90, 120].reduce(function (a, b) { return Math.abs(b - found.duration) < Math.abs(a - found.duration) ? b : a; }));
+    if (found.askedBy) $('#f-asker', wrap).value = found.askedBy;
+    if (found.askedByEmail) req.askedByEmail = found.askedByEmail;
+    if (found.internal) paintInternal(found.internal);
+    if (found.guests && found.guests.length) { $('#f-guests', wrap).innerHTML = ''; found.guests.forEach(guestRow); }
+  }
+  if (isNew) {
+    $('#f-read', wrap).onclick = function () {
+      var txt = $('#f-src', wrap).value.trim(), sayR = $('#f-read-say', wrap);
+      if (!txt) { sayR.textContent = 'Paste the email first.'; return; }
+      sayR.innerHTML = '<span class="spinner"></span> Reading it…';
+      readEmail(txt).then(function (found) {
+        apply(found);
+        sayR.textContent = found.byClaude ? 'Filled in below. Check it over — fix anything that’s off.' : 'Filled in what I could find below (Claude wasn’t available, so check it carefully).';
+      }, function () { sayR.textContent = 'Couldn’t read that one. Fill in the details below.'; });
+    };
+  }
+  save.onclick = function () {
+    var title = $('#f-title', wrap).value.trim();
+    if (!title) { say.textContent = 'Give the meeting a name.'; $('#f-title', wrap).focus(); return; }
+    var guests = [], bad = '';
+    $$('.guest-row', wrap).forEach(function (r) {
+      var n = $('.g-name', r).value.trim(), e = $('.g-email', r).value.trim(), o = $('.g-org', r).value.trim();
+      if (!n && !e) return;
+      if (e && !/^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/.test(e)) bad = 'Check the email address for ' + (n || e) + '.';
+      if (!e) bad = 'Add an email address for ' + n + '.';
+      var old = (req.guests || []).find(function (g) { return g.id === r.dataset.gid; });
+      guests.push(Object.assign(old ? clone(old) : { id: rid(6), code: linkCode() }, { name: n, email: e, org: o }));
+    });
+    if (bad) { say.textContent = bad; return; }
+    var owner = $('#f-owner', wrap).value, op = TEAM.people.find(function (p) { return (emailOf(p) || '').toLowerCase() === owner; });
+    var durChanged = req.duration && +$('#f-dur', wrap).value !== +req.duration;
+    Object.assign(req, {
+      title: title, purpose: $('#f-purpose', wrap).value.trim(), duration: +$('#f-dur', wrap).value, where: $('#f-where', wrap).value,
+      followDays: +$('#f-follow', wrap).value, askedBy: $('#f-asker', wrap).value.trim(), owner: owner, ownerName: op ? op.name : req.ownerName,
+      internal: $$('#f-int input:checked', wrap).map(function (i) { return i.value; }), guests: guests
+    });
+    if (durChanged) req.slots = (req.slots || []).map(function (s) { return Object.assign({}, s, { e: s.s + req.duration * 60000 }); });
+    if (isNew) req.source = ($('#f-src', wrap) || {}).value || '';
+    onSave(req, isNew);
+  };
+  return wrap;
+}
+function viewNew(app) {
+  if (!canEdit()) { app.appendChild(el('div', 'notice', 'You have View access to the Scheduler, so you can look but not start requests. Ask Perry for Edit access in People &amp; Access.')); return; }
+  var head = el('div', 'pagehead'); head.innerHTML = '<div class="grow"><h1>New Meeting Request</h1><p>Four short steps. Next you’ll pick the times to offer.</p></div>';
+  app.appendChild(head);
+  var pre = STATE.prefill; STATE.prefill = null;
+  app.appendChild(requestForm(null, function (req) {
+    if (pre) { req.inboxId = pre.inboxId; if (!req.askedByEmail) req.askedByEmail = pre.askedByEmail; }
+    put(req, pre ? 'Started the request from an email to ' + ((INBOX.server.docs[pre.inboxId] || {}).mailbox || 'the scheduling inbox') : 'Started the request').then(function () {
+      if (pre) updInbox(pre.inboxId, { status: 'started', reqId: req.id });
+      go(null, req.id); setTimeout(function () { openPicker(getReq(req.id)); }, 150);
+    });
+  }));
+  if (pre) { $('#f-src', app).value = pre.src; setTimeout(function () { var b = $('#f-read', app); if (b) b.click(); }, 50); }
+}
+
+/* reading a pasted email: Claude when it can, a careful guess when it can't */
+function readEmail(txt) {
+  var roster = TEAM.people.map(function (p) { return p.id + ' = ' + p.name + (emailOf(p) ? ' <' + emailOf(p) + '>' : ''); }).join('\n');
+  return askReady().then(function (ok) {
+    if (!ok) return guessFromEmail(txt);
+    var prompt = 'You help MISMO staff set up meetings. Read the email below (it may be a forwarded thread) and work out the meeting someone wants scheduled.\n\n' +
+      'MISMO staff (id = name <email>):\n' + roster + '\n\n' +
+      'Return ONLY a JSON object, no other text:\n{"title": short meeting name (use the name given in the email if there is one), "purpose": one or two plain sentences on what the meeting is for, "duration": minutes as a number (30 if not said), "askedBy": the person asking for the meeting to be scheduled, "askedByEmail": their email address if shown, "internal": [ids of the MISMO staff who should attend, from the list above], "guests": [{"name":..., "email":..., "org": company}] for attendees outside MISMO only}\n' +
+      'Only include attendees the email says should be in the meeting, not everyone copied. Use email addresses exactly as written in the email; leave email "" if it isn’t there. Do not include the person who will do the scheduling unless the email says they attend.\n\nEMAIL:\n' + txt.slice(0, 20000);
+    return ask(prompt).then(function (text) {
+      var j = jsonIn(text); if (!j) return guessFromEmail(txt);
+      var ids = TEAM.people.map(function (p) { return p.id; });
+      return { byClaude: true, title: String(j.title || '').slice(0, 140), purpose: String(j.purpose || '').slice(0, 2000), duration: +j.duration || 30, askedBy: String(j.askedBy || '').slice(0, 120), askedByEmail: /^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/.test(String(j.askedByEmail || '').trim()) ? String(j.askedByEmail).trim().toLowerCase() : '',
+        internal: (Array.isArray(j.internal) ? j.internal : []).filter(function (x) { return ids.indexOf(x) >= 0; }),
+        guests: (Array.isArray(j.guests) ? j.guests : []).slice(0, 20).map(function (g) { return { name: String(g.name || '').slice(0, 100), email: String(g.email || '').slice(0, 200), org: String(g.org || '').slice(0, 120) }; }) };
+    }, function () { return guessFromEmail(txt); });
+  });
+}
+function guessFromEmail(txt) {
+  var found = { title: '', internal: [], guests: [], purpose: '' };
+  var q = /[“"]([^”"\n]{4,120})[”"]/.exec(txt); if (q) found.title = q[1].trim();
+  if (!found.title) { var s = /^\s*Subject:\s*(?:(?:RE|FW|FWD):\s*)*(.+)$/im.exec(txt); if (s) found.title = s[1].trim().slice(0, 140); }
+  var seen = {}, re = /([A-Z][\w.'\-]+(?:,?\s+[A-Z][\w.'\-]+){0,3})\s*[<(](?:mailto:)?([^\s@<>()]+@[^\s@<>()]+\.[A-Za-z]{2,})[>)]/g, m;
+  while ((m = re.exec(txt))) {
+    var em = m[2].toLowerCase(); if (seen[em]) continue; seen[em] = 1;
+    var nm = m[1].replace(/^(?:From|To|Cc|Sent|Subject)\s*:?\s*/i, '').trim();
+    if (/,/.test(nm)) { var bits = nm.split(/\s*,\s*/); nm = bits[1] + ' ' + bits[0]; }
+    var p = personByEmail(em) || personByName(nm);
+    if (p) { if (found.internal.indexOf(p.id) < 0) found.internal.push(p.id); }
+    else if (!/@(mismo|mba)\.org$/.test(em)) found.guests.push({ name: nm, email: em, org: (em.split('@')[1] || '').split('.')[0].replace(/^./, function (c) { return c.toUpperCase(); }) });
+  }
+  var fr = /^\s*From:\s*([^<\n]+?)\s*<([^>\s]+@[^>\s]+)>/m.exec(txt);
+  if (fr) { var fn = fr[1].trim(); if (/,/.test(fn)) { var fb = fn.split(/\s*,\s*/); fn = fb[1] + ' ' + fb[0]; } found.askedBy = fn; found.askedByEmail = fr[2].toLowerCase(); }
+  var me0 = meP(); found.internal = found.internal.filter(function (id) { return !me0 || id !== me0.id; });
+  return Promise.resolve(found);
+}
+
+/* ---------------- one request ---------------- */
+function viewDetail(app, req) {
+  var editable = canEdit() && req.status !== 'cancelled';
+  var b = btn('All requests', 'ghost sm back', function () { go('list'); }, 'back'); app.appendChild(b);
+  var head = el('div', 'pagehead');
+  var meta = [esc(req.duration || 30) + ' min', esc(req.where || ''), 'Organizer: ' + esc(req.ownerName || req.owner)];
+  if (req.askedBy) meta.push('Asked for by ' + esc(req.askedBy));
+  head.innerHTML = '<div class="grow"><div style="margin-bottom:6px">' + phasePill(req) + '</div><h1>' + esc(req.title) + '</h1><p>' + meta.join(' · ') + '</p>' + (req.purpose ? '<p>' + esc(req.purpose) + '</p>' : '') + '</div>';
+  var acts = el('div', 'grow-row');
+  if (editable) {
+    acts.appendChild(btn('Draft an email', '', function () { openDraft(req, phase(req) === 'booked' ? 'confirm' : (req.guests || []).some(function (g) { return g.sentAt; }) ? 'follow' : 'ask'); }, 'spark'));
+    if (req.askedByEmail) acts.appendChild(btn('Reply to ' + (first(req.askedBy) || 'the person who asked'), 'ghost', function () { openReply(replySourceFor(req), req); }, 'mail'));
+    acts.appendChild(btn('Edit details', 'ghost', function () { openEdit(req); }, 'pen'));
+  }
+  head.appendChild(acts);
+  app.appendChild(head);
+
+  if (req.status === 'booked') {
+    var sl = slotById(req, req.chosen);
+    var bk = el('div', 'booked');
+    bk.innerHTML = '<div style="flex:1 1 280px"><div class="small muted">Booked for</div><div class="when">' + esc(sl ? slotLabel(sl, VIEW_TZ, true) : 'a time no longer listed') + '</div>' + (sl && VIEW_TZ !== ET ? '<div class="small muted">' + esc(slotLabel(sl, ET, true)) + '</div>' : '') + '</div>';
+    var ba = el('div', 'grow-row');
+    if (sl) {
+      ba.appendChild(btn('Create the invite in Outlook', '', function () { window.open(owaInvite(req, sl), '_blank', 'noopener'); }, 'cal'));
+      ba.appendChild(btn('Download invite file', 'ghost', function () { downloadIcs(req, sl); }, 'down'));
+    }
+    if (editable) {
+      ba.appendChild(btn('Draft the confirmation email', 'ghost', function () { openDraft(req, 'confirm'); }, 'spark'));
+      ba.appendChild(btn('Pick a different time', 'ghost', function () { var r = clone(req); r.status = ''; r.chosen = null; put(r, 'Reopened to pick a different time'); }));
+    }
+    bk.appendChild(ba); app.appendChild(bk);
+  }
+  if (req.status === 'cancelled') app.appendChild(el('div', 'notice warn', '<b>This request was cancelled.</b> ' + (canEdit() ? '<button class="linkbtn" type="button" id="reopen">Bring it back</button>' : '')));
+  if ($('#reopen')) $('#reopen').onclick = function () { var r = clone(req); r.status = ''; put(r, 'Brought back'); };
+
+  /* times + who can make it */
+  var pT = el('section', 'panel');
+  var future = (req.slots || []).filter(function (s) { return s.e > Date.now(); });
+  pT.innerHTML = '<div class="panel-h"><span class="step">1</span><h2>Times you’re offering</h2><span class="sub">' + (req.slots || []).length + ' offered' + ((req.slots || []).length !== future.length ? ', ' + ((req.slots || []).length - future.length) + ' already passed' : '') + '</span></div>';
+  var pa = el('div', 'acts'); $('.panel-h', pT).appendChild(pa);
+  if (editable && req.status !== 'booked') pa.appendChild(btn((req.slots || []).length ? 'Change the times' : 'Pick times', (req.slots || []).length ? 'ghost sm' : 'sm', function () { openPicker(req); }, 'cal'));
+  var pb = el('div', 'panel-b'); pT.appendChild(pb);
+  if (!(req.slots || []).length) pb.appendChild(el('div', 'empty', 'No times yet. ' + (editable ? 'Use <b>Pick times</b> — it shows when everyone from MISMO is free in Outlook.' : '')));
+  else pb.appendChild(gridFor(req, editable));
+  app.appendChild(pT);
+
+  /* outside guests */
+  var pG = el('section', 'panel');
+  pG.innerHTML = '<div class="panel-h"><span class="step">2</span><h2>Outside guests</h2><span class="sub">' + (LINKS.live ? 'Each gets a private link to mark the times that work' : 'Enter their answers when they reply') + '</span></div>';
+  var ga = el('div', 'acts'); $('.panel-h', pG).appendChild(ga);
+  var unsent = (req.guests || []).filter(function (g) { return !g.sentAt && !g.answer; });
+  if (editable && unsent.length && (req.slots || []).length && req.status !== 'booked') ga.appendChild(btn('Draft the invitation email', 'sm', function () { openDraft(req, 'ask', unsent.map(function (g) { return g.id; })); }, 'spark'));
+  var gb = el('div', 'panel-b'); pG.appendChild(gb);
+  if (LINKS.live === false && (req.guests || []).length) gb.appendChild(el('div', 'notice warn', '<b>Self-serve links aren’t switched on yet.</b> Until Perry turns them on (see the README), your emails ask guests to reply with the times that work, and you click <b>Enter their answer</b> when they do.'));
+  if (!(req.guests || []).length) gb.appendChild(el('div', 'empty', 'Only MISMO people on this one. ' + (editable ? '<button class="linkbtn" type="button" id="addg">Add someone from outside</button>' : '')));
+  else {
+    var t = el('table', 'guests');
+    t.innerHTML = '<thead><tr><th>Who</th><th>Status</th><th></th></tr></thead>';
+    var tb = el('tbody'); t.appendChild(tb);
+    (req.guests || []).forEach(function (g) {
+      var st = guestState(req, g), tr = el('tr');
+      var stTxt = st === 'answered' ? '<span class="pill p-yes">Answered ' + esc(fmtDay(g.answer.at || Date.now(), VIEW_TZ)) + (g.answer.via === 'manual' ? ' (entered by hand)' : '') + '</span>' + (g.answer.note ? '<div class="small muted" style="margin-top:4px">“' + esc(g.answer.note) + '”</div>' : '')
+        : st === 'unsent' ? '<span class="pill p-draft">Not asked yet</span>'
+        : st === 'due' ? '<span class="pill p-due">No reply — follow up ' + esc(dayWord(followDue(req, g))) + '</span>'
+        : st === 'closed' ? '<span class="pill p-draft">No reply</span>'
+        : '<span class="pill p-wait">Asked ' + esc(fmtDay(g.sentAt, VIEW_TZ)) + ' · follow up ' + esc(dayWord(followDue(req, g))) + '</span>';
+      tr.innerHTML = '<td><b>' + esc(g.name || '(no name)') + '</b><div class="small muted">' + esc(g.email) + (g.org ? ' · ' + esc(g.org) : '') + '</div></td><td>' + stTxt + '</td>';
+      if ((st === 'waiting' || st === 'due') && editable) {
+        var cd = el('button', 'linkbtn small', 'Wrong date? Change it'); cd.type = 'button'; cd.style.display = 'block'; cd.style.marginTop = '4px';
+        cd.onclick = function () { changeSentDate(req, g); };
+        tr.children[1].appendChild(cd);
+      }
+      var td = el('td'), a = el('div', 'acts'); td.appendChild(a); tr.appendChild(td);
+      if (LINKS.live) a.appendChild(btn('Copy their link', 'ghost sm', function () { copy(guestLink(req, g)).then(function () { toast('Copied ' + first(g.name) + '’s private link. It only works for them.'); }); }, 'link'));
+      if (editable && req.status !== 'booked') {
+        if (st === 'unsent') a.appendChild(btn('I sent it', 'ghost sm', function () {
+          askDate({ title: 'When did you send it to ' + first(g.name) + '?', days: req.followDays, ok: 'Mark as sent' }).then(function (when) {
+            if (!when) return;
+            var r = clone(getReq(req.id)); r.guests.forEach(function (x) { if (x.id === g.id) x.sentAt = when; });
+            put(r, 'Marked as asked: ' + (g.name || g.email) + sentOn(when));
+            toast('If ' + first(g.name) + ' doesn\u2019t answer, you\u2019ll be reminded on ' + dayWord(addBiz(when, r.followDays || DEFAULT_FOLLOW_DAYS)) + '.');
+          });
+        }, 'check'));
+        if (st === 'due' || st === 'waiting') a.appendChild(btn('Follow up', 'ghost sm', function () { openDraft(req, 'follow', [g.id]); }, 'spark'));
+        a.appendChild(btn(st === 'answered' ? 'Change answer' : 'Enter their answer', 'ghost sm', function () { openAnswer(req, g); }, 'pen'));
+      }
+      tb.appendChild(tr);
+    });
+    gb.appendChild(t);
+  }
+  app.appendChild(pG);
+  if ($('#addg')) $('#addg').onclick = function () { openEdit(req); };
+
+  /* the original email and what happened */
+  var pL = el('section', 'panel');
+  pL.innerHTML = '<div class="panel-h"><h2>Background</h2></div>';
+  var lb = el('div', 'panel-b'); pL.appendChild(lb);
+  if (req.source) { lb.appendChild(el('div', 'small muted', 'The email that started it')); var pre = el('pre', 'src'); pre.textContent = req.source; lb.appendChild(pre); }
+  var ul = el('ul', 'log');
+  (req.log || []).slice().reverse().forEach(function (x) { ul.appendChild(el('li', null, '<span>' + esc(fmtDay(x.at, VIEW_TZ) + ' ' + fmtTime(x.at, VIEW_TZ)) + '</span><span>' + esc(x.what) + ' — ' + esc(first(x.by)) + '</span>')); });
+  if ((req.log || []).length) { lb.appendChild(el('div', 'small muted', 'History')); lb.appendChild(ul); }
+  if (editable && req.status !== 'booked') {
+    var cx = btn('Cancel this request', 'danger sm', function () { if (confirm('Cancel “' + req.title + '”? Its Team HQ reminder will be ticked off. You can bring it back later.')) { var r = clone(req); r.status = 'cancelled'; put(r, 'Cancelled'); } });
+    cx.style.marginTop = '14px'; lb.appendChild(cx);
+  }
+  app.appendChild(pL);
+}
+
+function replySourceFor(req) {
+  var x = req.inboxId && INBOX.server.docs[req.inboxId];
+  if (x) return x;
+  var sub = /^\s*Subject:\s*(.+)$/im.exec(req.source || '');
+  return { from: req.askedByEmail, fromName: req.askedBy || '', subject: sub ? sub[1].trim() : req.title, body: req.source || req.purpose || '', receivedAt: req.createdAt };
+}
+/* the who-can-make-it grid */
+function gridFor(req, editable) {
+  var box = el('div');
+  var slots = (req.slots || []).slice().sort(function (a, b) { return a.s - b.s; });
+  var best = bestSlot(req);
+  var tzRow = el('div', 'grow-row small muted'); tzRow.style.marginBottom = '10px';
+  tzRow.appendChild(el('span', null, 'Times shown in'));
+  tzRow.appendChild(tzSelect());
+  if (best && req.status !== 'booked') tzRow.appendChild(el('span', null, '· Best so far: <b style="color:var(--good)">' + esc(slotLabel(best.sl)) + '</b> (' + best.sc.yes + ' can make it' + (best.sc.no ? ', ' + best.sc.no + ' can’t' : '') + ')'));
+  box.appendChild(tzRow);
+  var wrap = el('div', 'gridwrap'), t = el('table', 'av'); wrap.appendChild(t);
+  var h = '<thead><tr><th>Person</th>';
+  slots.forEach(function (sl) {
+    var past = sl.e < Date.now();
+    h += '<th class="' + (best && best.sl.id === sl.id ? 'best' : '') + '"' + (past ? ' style="opacity:.5"' : '') + '><span class="d">' + esc(fmtDay(sl.s, VIEW_TZ)) + '</span>' + esc(fmtRange(sl.s, sl.e, VIEW_TZ)) + (req.chosen === sl.id ? '<br><span class="pill p-booked" style="margin-top:4px">Booked</span>' : '') + '</th>';
+  });
+  t.innerHTML = h + '</tr></thead>';
+  var tb = el('tbody'); t.appendChild(tb);
+  function cellHTML(v, title, clickable) {
+    var txt = { yes: 'Works', maybe: 'Tentative', no: 'Can’t' }[v] || '—';
+    return '<button type="button" class="cell c-' + (v || 'none') + '"' + (clickable ? '' : ' disabled') + ' title="' + esc(title || '') + '">' + txt + '</button>';
+  }
+  if ((req.internal || []).length) {
+    tb.appendChild(el('tr', 'grp', '<td colspan="' + (slots.length + 1) + '">MISMO — from Outlook</td>'));
+    req.internal.forEach(function (pid) {
+      var p = person(pid) || { name: pid }, tr = el('tr');
+      tr.innerHTML = '<td><b>' + esc(p.name) + '</b><div class="small muted">' + (hasCal(pid) ? 'Outlook connected' : 'Outlook not connected — click to set') + '</div></td>';
+      slots.forEach(function (sl) {
+        var a = internalAnswer(req, pid, sl), td = el('td', 'c');
+        td.innerHTML = cellHTML(a.v, a.hand ? 'Set by hand. Click to change.' : a.cal ? (a.what ? 'Outlook: ' + a.what : 'Free in Outlook') + (editable ? ' · Click to override' : '') : 'Click to set', editable);
+        if (editable) $('button', td).onclick = function () {
+          var r = clone(getReq(req.id)); r.internalAns = r.internalAns || {}; r.internalAns[pid] = r.internalAns[pid] || {};
+          var cur = r.internalAns[pid][sl.id] || null, order = [null, 'yes', 'no'], nx = order[(order.indexOf(cur) + 1) % order.length];
+          if (nx) r.internalAns[pid][sl.id] = nx; else delete r.internalAns[pid][sl.id];
+          put(r);
+        };
+        tr.appendChild(td);
+      });
+      tb.appendChild(tr);
+    });
+  }
+  if ((req.guests || []).length) {
+    tb.appendChild(el('tr', 'grp', '<td colspan="' + (slots.length + 1) + '">Outside guests</td>'));
+    req.guests.forEach(function (g) {
+      var tr = el('tr');
+      tr.innerHTML = '<td><b>' + esc(g.name || g.email) + '</b><div class="small muted">' + esc(g.org || '') + (g.answer ? '' : (g.org ? ' · ' : '') + 'no answer yet') + '</div></td>';
+      slots.forEach(function (sl) {
+        var td = el('td', 'c'); td.innerHTML = cellHTML(guestAnswer(g, sl), editable ? 'Click to enter ' + first(g.name) + '’s answers' : '', editable);
+        if (editable) $('button', td).onclick = function () { openAnswer(req, g); };
+        tr.appendChild(td);
+      });
+      tb.appendChild(tr);
+    });
+  }
+  var tf = el('tfoot'), fr = el('tr'); fr.appendChild(el('td', null, 'Can make it'));
+  slots.forEach(function (sl) {
+    var sc = score(req, sl), td = el('td', 'c');
+    td.innerHTML = '<div class="mono">' + sc.yes + '/' + (sc.yes + sc.maybe + sc.no + sc.none) + '</div>';
+    if (editable && req.status !== 'booked' && sl.s > Date.now()) {
+      var bb = btn('Book', 'sm' + (best && best.sl.id === sl.id ? '' : ' ghost'), function () { bookSlot(req, sl); }); bb.style.marginTop = '5px'; td.appendChild(bb);
+    }
+    fr.appendChild(td);
+  });
+  tf.appendChild(fr); t.appendChild(tf);
+  box.appendChild(wrap);
+  box.appendChild(el('div', 'legend', '<span><i style="background:var(--free)"></i>Works</span><span><i style="background:var(--some)"></i>Tentative in Outlook</span><span><i style="background:var(--busy)"></i>Can’t / busy</span><span><i style="background:var(--unk)"></i>Don’t know yet</span>'));
+  return box;
+}
+function tzSelect() {
+  var s = el('select'); s.style.width = 'auto'; s.style.minHeight = '30px'; s.style.padding = '3px 8px'; s.setAttribute('aria-label', 'Time zone');
+  ZONES.forEach(function (z) { var o = el('option', null, esc(z.n)); o.value = z.v; s.appendChild(o); });
+  s.value = VIEW_TZ; s.onchange = function () { VIEW_TZ = s.value; lsSet('tz', VIEW_TZ); render(); };
+  return s;
+}
+function bookSlot(req, sl) {
+  var sc = score(req, sl);
+  var msg = 'Book “' + req.title + '” for ' + slotLabel(sl, VIEW_TZ, true) + '?\n\n' + sc.yes + ' can make it' + (sc.maybe ? ', ' + sc.maybe + ' tentative' : '') + (sc.no ? ', ' + sc.no + ' can’t' : '') + (sc.none ? ', ' + sc.none + ' haven’t said' : '') + '.\n\nNext you’ll send the calendar invite from Outlook.';
+  if (!confirm(msg)) return;
+  var r = clone(getReq(req.id)); r.status = 'booked'; r.chosen = sl.id; r.bookedAt = Date.now();
+  put(r, 'Booked for ' + slotLabel(sl, ET, true));
+  toast('Booked. Now send the invite from Outlook — the buttons are at the top.');
+  window.scrollTo(0, 0);
+}
+
+/* ======================================================================
+   INCOMING: meeting requests that arrived by email
+   ----------------------------------------------------------------------
+   A Power Automate flow watches scheduling@mismo.org (people's own meeting
+   requests reach it through an Outlook rule that redirects them there) and
+   sends each email to the relay, which adds it to data/inbox.json in the
+   private scheduler-data repo: {docs:{<id>:{from, fromName, subject, body,
+   receivedAt, mailbox, status:'new'|'started'|'dismissed', reqId}}}.
+   Staff turn an email into a request (Claude reads it), draft a reply to the
+   person who sent it, or set it aside. Nothing here sends anything.
+   ====================================================================== */
+var INBOX = { server: { docs: {} }, sha: null, loaded: false, show: lsGet('inShow', 'new') };
+function inboxItems() { var d = INBOX.server.docs || {}; return Object.keys(d).map(function (k) { return d[k]; }).sort(function (a, b) { return (b.receivedAt || 0) - (a.receivedAt || 0); }); }
+function inboxNew() { return inboxItems().filter(function (x) { return x.status === 'new'; }); }
+function loadInbox() {
+  if (PREVIEW) { INBOX.loaded = true; return Promise.resolve(false); }
+  return readData(PROJECT, 'inbox').then(function (b) {
+    var c = b && b.data && typeof b.data === 'object' ? b.data : {}, before = JSON.stringify(INBOX.server.docs);
+    INBOX.server = Object.assign({}, c, { docs: c.docs && typeof c.docs === 'object' ? c.docs : {} });
+    INBOX.sha = (b && b.sha) || null; INBOX.loaded = true;
+    return before !== JSON.stringify(INBOX.server.docs);
+  }, function () { INBOX.loaded = true; return false; });
+}
+/* small changes (status, link to a request), read-modify-write so a newly arrived email is never lost */
+var inChain = Promise.resolve();
+function updInbox(id, patch) {
+  var cur = INBOX.server.docs[id]; if (!cur) return Promise.resolve();
+  INBOX.server.docs[id] = Object.assign({}, cur, patch, { by: me().name, byAt: Date.now() });
+  render();
+  if (PREVIEW) return Promise.resolve();
+  inChain = inChain.then(function () {
+    var tries = 0;
+    function go() {
+      return readData(PROJECT, 'inbox').then(function (b) {
+        var c = (b && b.data && typeof b.data === 'object') ? b.data : {}, next = Object.assign({}, c, { docs: Object.assign({}, c.docs || {}) });
+        delete next.savedBy; delete next.savedAt;
+        if (!next.docs[id]) return;
+        next.docs[id] = Object.assign({}, next.docs[id], patch, { by: me().name, byAt: Date.now() });
+        return writeData(PROJECT, 'inbox', next, b && b.sha).then(function (r) { INBOX.server = next; INBOX.sha = r && r.sha; });
+      }).catch(function (e) { if (e.status === 409 && tries < 5) { tries++; return new Promise(function (r) { setTimeout(r, 400 * tries); }).then(go); } throw e; });
+    }
+    return go();
+  }).catch(function (e) { toast('That change to Incoming didn’t save (' + (e.code || e.message) + '). Try again.'); });
+  return inChain;
+}
+function emailText(x) {
+  return 'From: ' + (x.fromName ? x.fromName + ' <' + x.from + '>' : x.from) + '\n' + (x.to ? 'To: ' + x.to + '\n' : '') + (x.cc ? 'Cc: ' + x.cc + '\n' : '') +
+    'Sent: ' + new Date(x.receivedAt || Date.now()).toLocaleString('en-US', { timeZone: ET, dateStyle: 'full', timeStyle: 'short' }) + '\nSubject: ' + (x.subject || '') + '\n\n' + (x.body || '');
+}
+function displayName(x) { var n = String(x.fromName || '').trim(); if (/,/.test(n)) { var b = n.split(/\s*,\s*/); n = b[1] + ' ' + b[0]; } return n || x.from; }
+
+function viewInbox(app) {
+  var head = el('div', 'pagehead');
+  head.innerHTML = '<div class="grow"><h1>Incoming</h1><p>Meeting requests that came in by email to scheduling@mismo.org (including the ones your Outlook rule sends there). Start a request from one, or have Claude draft a reply to the person who asked.</p></div>';
+  head.appendChild(seg([['new', 'New'], ['all', 'All']], INBOX.show, function (v) { INBOX.show = v; lsSet('inShow', v); render(); }));
+  app.appendChild(head);
+  var list = inboxItems().filter(function (x) { return INBOX.show === 'all' || x.status === 'new'; });
+  if (!INBOX.loaded) { app.appendChild(el('div', 'empty', '<span class="spinner"></span> Loading…')); return; }
+  if (!list.length) {
+    app.appendChild(el('div', 'panel', '<div class="empty">' + (INBOX.show === 'new' ? 'No new meeting requests. ' : 'Nothing has come in yet. ') +
+      (inboxItems().length ? '' : 'Once the email watcher is switched on (see How It Works), emails to scheduling@mismo.org appear here by themselves.') + '</div>'));
+    return;
+  }
+  var box = el('div', 'fu-list');
+  list.forEach(function (x) { box.appendChild(inboxCard(x)); });
+  app.appendChild(box);
+}
+function inboxCard(x) {
+  var c = el('div', 'fu' + (x.status === 'new' ? '' : ' soon'));
+  c.style.borderLeftColor = x.status === 'new' ? 'var(--sky)' : 'var(--border-strong)';
+  c.style.alignItems = 'flex-start';
+  var req = x.reqId ? getReq(x.reqId) : null;
+  var st = x.status === 'started' ? '<span class="pill p-ready">Request started' + (x.by ? ' by ' + esc(first(x.by)) : '') + '</span>' : x.status === 'dismissed' ? '<span class="pill p-draft">Set aside' + (x.by ? ' by ' + esc(first(x.by)) : '') + '</span>' : '<span class="pill p-collect">New</span>';
+  var snip = String(x.body || '').replace(/\s+/g, ' ').slice(0, 260);
+  var who = el('div', 'who');
+  who.innerHTML = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px">' + st + '<span class="small muted">' + esc(fmtDay(x.receivedAt, VIEW_TZ) + ' ' + fmtTime(x.receivedAt, VIEW_TZ)) + (x.mailbox ? ' · to ' + esc(x.mailbox) : '') + '</span></div>' +
+    '<b>' + esc(x.subject) + '</b><span>From ' + esc(displayName(x)) + ' &lt;' + esc(x.from) + '&gt;</span>' +
+    '<div class="small" style="color:var(--ink-2);margin-top:6px">' + esc(snip) + (String(x.body || '').length > 260 ? '…' : '') + '</div>';
+  var more = el('button', 'linkbtn small', 'Show the whole email'); more.type = 'button'; more.style.marginTop = '6px';
+  var pre = el('pre', 'src'); pre.hidden = true; pre.style.marginTop = '8px'; pre.textContent = emailText(x);
+  more.onclick = function () { pre.hidden = !pre.hidden; more.textContent = pre.hidden ? 'Show the whole email' : 'Hide the email'; };
+  who.appendChild(more); who.appendChild(pre);
+  c.appendChild(who);
+  var a = el('div', 'acts'); a.style.flexDirection = 'column'; a.style.alignItems = 'stretch';
+  if (req) a.appendChild(btn('Open the request', 'sm', function () { go(null, req.id); }));
+  if (canEdit()) {
+    if (x.status !== 'started') a.appendChild(btn('Start a request', 'sm', function () { STATE.prefill = { src: emailText(x), inboxId: x.id, askedByEmail: x.from }; go('new'); }, 'plus'));
+    a.appendChild(btn('Draft a reply', 'sm ghost', function () { openReply(x); }, 'spark'));
+    if (x.status === 'new') a.appendChild(btn('Not a meeting request', 'sm ghost', function () { updInbox(x.id, { status: 'dismissed' }); toast('Set aside. Find it again under All.'); }));
+    else if (x.status === 'dismissed') a.appendChild(btn('Put back', 'sm ghost', function () { updInbox(x.id, { status: 'new' }); }));
+  }
+  c.appendChild(a);
+  return c;
+}
+
+/* a reply to the person who asked, written from their email */
+function openReply(x, req) {
+  var D = dialog('Draft a reply to ' + first(displayName(x)), true);
+  var form = el('div', 'form');
+  form.innerHTML = '<label class="f"><span>What should the reply do?</span><select id="r-goal">' +
+    '<option value="ack">Say thanks and that I’m setting it up</option>' +
+    '<option value="info">Ask for anything I’m missing (who, how long, which days)</option>' +
+    '<option value="times">Tell them which times I’m offering</option>' +
+    '<option value="other">Something else (say below)</option></select></label>' +
+    '<label class="f"><span>Anything to add? <span class="hint">(optional)</span></span><textarea id="r-extra" rows="2" maxlength="1000"></textarea></label>';
+  D.body.appendChild(form);
+  if (req && (req.slots || []).length) $('#r-goal', form).value = 'times';
+  var goB = btn('Draft it', 'big', null, 'spark'); goB.style.marginTop = '14px';
+  var say = el('span', 'small muted'); say.style.marginLeft = '10px';
+  D.body.appendChild(goB); D.body.appendChild(say);
+  var out = el('div', 'draft-out'); out.hidden = true; D.body.appendChild(out);
+  D.foot.appendChild(btn('Close', 'ghost', D.close));
+  goB.onclick = function () {
+    var goal = $('#r-goal', form).value, extra = $('#r-extra', form).value.trim();
+    if (goal === 'other' && !extra) { say.textContent = 'Say what the reply should do in the box above.'; return; }
+    var times = req ? timesBlock(req, ET) : '';
+    var subj = /^re:/i.test(x.subject || '') ? x.subject : 'RE: ' + (x.subject || '');
+    goB.disabled = true; say.innerHTML = '<span class="spinner"></span> Writing…';
+    var fallback = function () {
+      var hi = 'Hi ' + first(displayName(x)) + ',\n\n';
+      var mid = goal === 'info' ? 'Thanks for reaching out. I’m happy to set this up. Could you confirm who should attend (with email addresses for anyone outside MISMO), how long the meeting should be, and any days that work best?'
+        : goal === 'times' && times ? 'Thanks for reaching out. Here are the times I’m offering:\n\n' + times + '\n\nI’ll send the invitation once everyone has confirmed.'
+        : 'Thanks for reaching out. I’m setting this up now and will send out some times shortly.';
+      return { subject: subj, body: hi + mid + (extra ? '\n\n' + extra : '') + '\n\nBest,\n' + senderSig() };
+    };
+    askReady().then(function (ok) {
+      if (!ok) return { d: fallback(), byClaude: false };
+      var prompt = 'Draft a reply email for a MISMO staff member who schedules meetings. Warm, professional, concise (under 140 words), plain text, no markdown, no emoji.\n\n' +
+        'GOAL: ' + { ack: 'Thank them and say you are setting the meeting up and will follow up with times.', info: 'Thank them and ask only for what the email does not already say among: who should attend (and outside attendees’ email addresses), how long, which days or times suit. Do not ask for anything the email already answers.', times: 'Thank them and list the times being offered, exactly as given below.', other: 'Do what the sender’s note says.' }[goal] + '\n\n' +
+        (times && goal === 'times' ? 'TIMES (copy exactly):\n' + times + '\n\n' : '') +
+        (extra ? 'SENDER’S NOTE (follow it): ' + extra + '\n\n' : '') +
+        'SENDER: ' + me().name + (meP() && meP().role ? ', ' + meP().role : '') + ', MISMO\n\n' +
+        'THE EMAIL YOU ARE REPLYING TO (use its names and details; never invent facts; do not repeat phone numbers or links):\n' + emailText(x).slice(0, 8000) + '\n\n' +
+        'End with a sign-off line (e.g. "Best,") and then {{SIGNATURE}} on its own line. Return ONLY JSON: {"subject": "...", "body": "..."}';
+      return ask(prompt).then(function (text) {
+        var j = jsonIn(text); if (!j || !j.body) return { d: fallback(), byClaude: false };
+        var body = String(j.body); body = body.indexOf('{{SIGNATURE}}') >= 0 ? body.replace(/\{\{SIGNATURE\}\}/g, senderSig()) : body + '\n\n' + senderSig();
+        return { d: { subject: subj, body: body }, byClaude: true };
+      }, function () { return { d: fallback(), byClaude: false }; });
+    }).then(function (res) {
+      goB.disabled = false; goB.querySelector('span').textContent = 'Draft it again';
+      say.textContent = res.byClaude ? 'Drafted by Claude from their email. Read it over before you send.' : (PREVIEW ? 'Standard wording (in the preview Claude isn’t connected; on the real site Claude writes it from their email).' : 'Standard wording — Claude wasn’t available just now.');
+      out.hidden = false; out.innerHTML = '';
+      var sl = el('label', 'f'); sl.innerHTML = '<span>Subject</span><input type="text">'; $('input', sl).value = res.d.subject;
+      var bl = el('label', 'f'); bl.style.marginTop = '10px'; bl.innerHTML = '<span>Email <span class="hint">(you can edit it here)</span></span><textarea rows="12"></textarea>'; $('textarea', bl).value = res.d.body;
+      out.appendChild(sl); out.appendChild(bl);
+      var row = el('div', 'grow-row'); row.style.marginTop = '12px';
+      row.appendChild(btn('Copy the reply', '', function () { copy($('textarea', bl).value).then(function () { toast('Copied. In Outlook, open their email, press Reply, and paste.'); }); }));
+      row.appendChild(btn('Open as a new email in Outlook', 'ghost', function () { window.open(owaCompose([x.from], [], $('input', sl).value, $('textarea', bl).value), '_blank', 'noopener'); }, 'mail'));
+      out.appendChild(row);
+      out.appendChild(el('p', 'small muted', 'Best way: open their email in Outlook, press <b>Reply</b>, and paste this in, so it stays in the same conversation.'));
+    });
+  };
+}
+
+/* ======================================================================
+   DIALOGS
+   ====================================================================== */
+function dialog(title, wide) {
+  var s = el('div', 'scrim'), d = el('div', 'dlg' + (wide ? ' wide' : ''));
+  d.setAttribute('role', 'dialog'); d.setAttribute('aria-modal', 'true'); d.setAttribute('aria-label', title);
+  d.innerHTML = '<div class="dlg-h"><h2>' + esc(title) + '</h2><button class="x" type="button" aria-label="Close">\u00d7</button></div><div class="dlg-b"></div><div class="dlg-f"></div>';
+  s.appendChild(d); document.body.appendChild(s);
+  var before = document.activeElement;
+  function close() { s.remove(); document.removeEventListener('keydown', onKey); if (before && before.focus) try { before.focus(); } catch (e) {} }
+  function onKey(e) { if (e.key === 'Escape') { var all = $$('.scrim'); if (all[all.length - 1] === s) close(); } }
+  document.addEventListener('keydown', onKey);
+  $('.x', d).onclick = close;
+  s.addEventListener('mousedown', function (e) { if (e.target === s) close(); });
+  setTimeout(function () { var f = $('.dlg-b input, .dlg-b select, .dlg-b textarea, .dlg-b button', d) || $('.x', d); try { f.focus(); } catch (e) {} }, 30);
+  return { body: $('.dlg-b', d), foot: $('.dlg-f', d), close: close, root: d };
+}
+
+/* ---------------- "when did you send it?" ----------------
+   Sending happens in Outlook, so the Scheduler only knows the day you tell it. Today is the default; an earlier day
+   (up to 60 days back) starts the follow-up clock from then, so marking it late doesn't push the reminder back. */
+function askDate(o) {
+  return new Promise(function (resolve) {
+    var D = dialog(o.title || 'When did you send it?'), today = todayISO(ET), done = false;
+    var defIso = o.def ? parts(o.def, ET).iso : today;
+    D.body.appendChild(el('p', 'small muted', esc(o.lead || 'Pick the day the email went out. The follow-up reminder counts from that day.')));
+    var row = el('div', 'grow-row');
+    var inp = el('input'); inp.type = 'date'; inp.value = defIso > today ? today : defIso; inp.max = today; inp.min = isoAdd(today, -60); inp.style.width = 'auto'; inp.setAttribute('aria-label', 'Day it was sent');
+    row.appendChild(inp);
+    row.appendChild(btn('Today', 'ghost sm', function () { inp.value = today; hint(); }));
+    var yd = isoAdd(today, -1); while (isWeekend(yd)) yd = isoAdd(yd, -1);
+    row.appendChild(btn(dow(yd) === 5 && dow(today) === 1 ? 'Last Friday' : 'Yesterday', 'ghost sm', function () { inp.value = yd; hint(); }));
+    D.body.appendChild(row);
+    var h = el('p', 'small'); h.style.marginTop = '12px'; D.body.appendChild(h);
+    function pick() { var v = inp.value; if (!/^\d{4}-\d{2}-\d{2}$/.test(v) || v > today || v < inp.min) return null; return v === today ? (o.def && parts(o.def, ET).iso === today ? o.def : Date.now()) : at(v, 12 * 60, ET); }
+    function hint() {
+      var t = pick();
+      h.innerHTML = t ? 'If there\u2019s no reply, you\u2019ll be reminded to follow up on <b>' + esc(new Date(addBiz(t, o.days || DEFAULT_FOLLOW_DAYS) + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'long', month: 'long', day: 'numeric' })) + '</b>.'
+        : '<span style="color:var(--bad)">Pick a day between ' + esc(inp.min) + ' and today.</span>';
+    }
+    inp.addEventListener('input', hint); inp.addEventListener('change', hint); hint();
+    var x = $('.x', D.root), close0 = D.close;
+    function finish(v) { if (done) return; done = true; close0(); resolve(v); }
+    x.onclick = function () { finish(null); };
+    D.foot.appendChild(btn('Cancel', 'ghost', function () { finish(null); }));
+    D.foot.appendChild(btn(o.ok || 'Save', '', function () { var t = pick(); if (!t) { hint(); return; } finish(t); }, 'check'));
+    /* Escape or a click outside also count as cancel */
+    var obs = new MutationObserver(function () { if (!document.body.contains(D.root)) { obs.disconnect(); if (!done) { done = true; resolve(null); } } });
+    obs.observe(document.body, { childList: true });
+  });
+}
+
+/* ---------------- editing a request ---------------- */
+function openEdit(req) {
+  var D = dialog('Edit \u201c' + req.title + '\u201d', true);
+  D.foot.remove();
+  D.body.appendChild(requestForm(req, function (r) { put(r, 'Edited the details'); D.close(); }, function () { D.close(); }));
+}
+
+/* ---------------- picking the times to offer ---------------- */
+function openPicker(req) {
+  if (!req) return;
+  var D = dialog('Pick the times to offer', true);
+  var dur = (+req.duration || 30) * 60000, STEP = 30;
+  var picked = {}; (req.slots || []).forEach(function (s) { picked[s.s] = s.id; });
+  var start = bizDaysAhead(1)[0], DAYS = 10;
+  var who = (req.internal || []).map(function (id) { return person(id) || { id: id, name: id }; });
+  var withCal = who.filter(function (p) { return hasCal(p.id); }), noCal = who.filter(function (p) { return !hasCal(p.id); });
+  var top = el('div', 'tp-top');
+  D.body.appendChild(el('p', 'small muted', 'Click a start time to offer it (it covers ' + (req.duration || 30) + ' minutes). <b>Green</b> = everyone from MISMO on this meeting is free in Outlook; <b>amber</b> = someone is tentative; <b>red</b> = someone is busy. Faded rows are outside 9\u20135 Eastern. Aim for 3\u20136 times across a few days.' +
+    (noCal.length ? '<br><b>Not in Outlook here:</b> ' + esc(noCal.map(function (p) { return p.name; }).join(', ')) + ' \u2014 check their calendar yourself, or set their answers in the grid afterwards.' : '') +
+    (!who.length ? '<br>No MISMO people are on this meeting yet, so there\u2019s no Outlook to check.' : '')));
+  D.body.appendChild(top);
+  top.appendChild(el('span', 'small muted', 'Times in')); top.appendChild(tzSelect());
+  var prev = btn('Earlier', 'ghost sm'), next = btn('Later', 'ghost sm'), sug = btn('Suggest 5 good times', 'sm', null, 'spark'), clr = btn('Clear', 'ghost sm');
+  top.appendChild(prev); top.appendChild(next); top.appendChild(sug); top.appendChild(clr);
+  var rng = el('span', 'small muted'); top.appendChild(rng);
+  var wrap = el('div', 'tp-wrap'); D.body.appendChild(wrap);
+  var countSay = el('span', 'small muted'); countSay.style.marginRight = 'auto'; countSay.style.alignSelf = 'center';
+  D.foot.appendChild(countSay);
+  D.foot.appendChild(btn('Cancel', 'ghost', D.close));
+  var saveB = btn('Use these times', '', null, 'check'); D.foot.appendChild(saveB);
+  /* the picker's own zone select re-renders the page; redraw the grid too */
+  $('select', top).addEventListener('change', function () { draw(); });
+
+  function days() { var out = [], iso = isoAdd(start, -1); while (out.length < DAYS) { iso = isoAdd(iso, 1); if (!isWeekend(iso)) out.push(iso); } return out; }
+  function state(s) {
+    var e = s + dur, busy = [], tent = [];
+    withCal.forEach(function (p) { var c = calState(p.id, s, e); if (c === 'busy' || c === 'oof') busy.push(p); else if (c === 'tentative') tent.push(p); });
+    if (!withCal.length) return { c: 's-unk', t: 'No Outlook to check', n: '' };
+    if (busy.length) return { c: 's-busy', t: 'Busy: ' + busy.map(function (p) { var w = calWhat(p.id, s, e); return first(p.name) + (w ? ' (' + w + ')' : ''); }).join('; '), n: busy.length === 1 ? first(busy[0].name) : busy.length + ' busy' };
+    if (tent.length) return { c: 's-some', t: 'Tentative: ' + tent.map(function (p) { return first(p.name); }).join(', '), n: 'tentative' };
+    return { c: 's-free', t: 'Everyone free', n: '' };
+  }
+  function inETHours(s) { var p = parts(s, ET), m = p.h * 60 + p.mi, pe = parts(s + dur, ET), me2 = pe.h * 60 + pe.mi; return m >= 540 && (me2 <= 1020 && me2 > m); }
+  function draw() {
+    var ds = days(), tz = VIEW_TZ;
+    rng.textContent = new Date(ds[0] + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' }) + ' \u2013 ' + new Date(ds[ds.length - 1] + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' });
+    var t = el('table', 'tp'), h = '<thead><tr><th></th>';
+    ds.forEach(function (d) { h += '<th>' + esc(new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' })) + '</th>'; });
+    t.innerHTML = h + '</tr></thead>';
+    var tb = el('tbody'); t.appendChild(tb);
+    var covered = {}; Object.keys(picked).forEach(function (k) { var s = +k; for (var x = s + STEP * 60000; x < s + dur; x += STEP * 60000) covered[x] = 1; });
+    for (var mins = 7 * 60; mins <= 18 * 60 + 30; mins += STEP) {
+      var tr = el('tr'), lab = el('td', null, esc(fmtTime(at(ds[0], mins, tz), tz).replace(':00', '')));
+      tr.appendChild(lab);
+      ds.forEach(function (d) {
+        var s = at(d, mins, tz), td = el('td'), b = el('button', 'slot'); b.type = 'button';
+        var st = state(s), on = picked[s] !== undefined, past = s < Date.now();
+        b.className = 'slot ' + st.c + (on ? ' s-on' : covered[s] ? ' s-in' : '');
+        b.textContent = on ? '\u2713 ' + fmtTime(s, tz) : st.n;
+        b.title = fmtDay(s, tz, true) + ' ' + fmtRange(s, s + dur, tz) + ' \u2014 ' + st.t;
+        b.setAttribute('aria-pressed', String(on)); b.setAttribute('aria-label', b.title + (on ? ' (picked)' : ''));
+        if (!inETHours(s)) b.style.opacity = '.45';
+        if (past) { b.disabled = true; b.style.opacity = '.25'; }
+        b.onclick = function () { if (picked[s] !== undefined) delete picked[s]; else picked[s] = null; draw(); };
+        td.appendChild(b); tr.appendChild(td);
+      });
+      tb.appendChild(tr);
+    }
+    var sc = wrap.scrollTop; wrap.innerHTML = ''; wrap.appendChild(t); wrap.scrollTop = sc;
+    var n = Object.keys(picked).length;
+    countSay.textContent = n ? n + (n === 1 ? ' time picked' : ' times picked') : 'No times picked yet';
+  }
+  prev.onclick = function () { var d = days(); start = isoAdd(d[0], -14); if (start < todayISO(VIEW_TZ)) start = bizDaysAhead(1)[0]; draw(); };
+  next.onclick = function () { var d = days(); start = isoAdd(d[d.length - 1], 1); draw(); };
+  clr.onclick = function () { picked = {}; draw(); };
+  sug.onclick = function () {
+    var got = [], perDay = {}, ds = days();
+    var tries = [600, 660, 840, 900, 720, 570, 780, 960, 630, 870];   /* minutes past midnight Eastern, mid-morning and mid-afternoon first */
+    for (var round = 0; round < 2 && got.length < 5; round++) {
+      ds.forEach(function (d) {
+        if (got.length >= 5 || (perDay[d] || 0) > round) return;
+        var rot = ds.indexOf(d) * 3 + round * 5;
+        for (var i0 = 0; i0 < tries.length; i0++) {
+          var s = at(d, tries[(i0 + rot) % tries.length], ET);
+          if (s < Date.now() + 2 * 3600000 || picked[s] !== undefined || !inETHours(s)) continue;
+          if (got.some(function (x) { return Math.abs(x - s) < dur + 60 * 60000; })) continue;
+          var st = state(s); if (st.c !== 's-free' && st.c !== 's-unk') continue;
+          got.push(s); perDay[d] = (perDay[d] || 0) + 1; return;
+        }
+      });
+    }
+    if (!got.length) { toast('No times where everyone is free in these days. Try Later.'); return; }
+    got.forEach(function (s) { picked[s] = null; }); draw();
+    toast('Picked ' + got.length + ' times when everyone is free. Change any you like.');
+  };
+  saveB.onclick = function () {
+    var keys = Object.keys(picked).map(Number).sort(function (a, b) { return a - b; });
+    if (!keys.length) { toast('Pick at least one time.'); return; }
+    var r = clone(getReq(req.id));
+    var old = {}; (r.slots || []).forEach(function (s) { old[s.s] = s; });
+    r.slots = keys.map(function (s) { return old[s] ? Object.assign({}, old[s], { e: s + dur }) : { id: rid(5), s: s, e: s + dur }; });
+    var ids = r.slots.map(function (s) { return s.id; });
+    (r.guests || []).forEach(function (g) { if (g.answer) { g.answer.yes = (g.answer.yes || []).filter(function (x) { return ids.indexOf(x) >= 0; }); g.answer.maybe = (g.answer.maybe || []).filter(function (x) { return ids.indexOf(x) >= 0; }); } });
+    put(r, 'Offered ' + keys.length + ' times');
+    D.close();
+    var unsent = (r.guests || []).filter(function (g) { return !g.sentAt && !g.answer; });
+    if (unsent.length) setTimeout(function () { toast('Next: \u201cDraft the invitation email\u201d under Outside guests.'); }, 300);
+  };
+  draw();
+  /* start the grid at about 8 AM */
+  setTimeout(function () { var rows = $$('tbody tr', wrap); if (rows[2]) wrap.scrollTop = rows[2].offsetTop - 40; }, 40);
+}
+
+/* ---------------- entering an answer by hand ---------------- */
+function openAnswer(req, g) {
+  req = getReq(req.id); g = (req.guests || []).find(function (x) { return x.id === g.id; }) || g;
+  var D = dialog(first(g.name || g.email) + '\u2019s answer');
+  var slots = (req.slots || []).slice().sort(function (a, b) { return a.s - b.s; });
+  var ans = {}; slots.forEach(function (sl) { ans[sl.id] = guestAnswer(g, sl) || (g.answer ? 'no' : null); });
+  D.body.appendChild(el('p', 'small muted', 'From their email or call, mark each time. Times in ' + esc(zoneName(VIEW_TZ)) + '.'));
+  if (!slots.length) D.body.appendChild(el('div', 'empty', 'Pick some times first.'));
+  slots.forEach(function (sl) {
+    var row = el('div', 'ans-row'); row.appendChild(el('span', null, esc(slotLabel(sl))));
+    var tri = el('div', 'tri'); tri.setAttribute('role', 'group'); tri.setAttribute('aria-label', slotLabel(sl));
+    [['yes', 'Works', 'y'], ['no', 'Can\u2019t', 'n']].forEach(function (o) {
+      var b = el('button', o[2], o[1]); b.type = 'button'; b.setAttribute('aria-pressed', String(ans[sl.id] === o[0]));
+      b.onclick = function () { ans[sl.id] = o[0]; $$('button', tri).forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); }); };
+      tri.appendChild(b);
+    });
+    row.appendChild(tri); D.body.appendChild(row);
+  });
+  var nl = el('label', 'f'); nl.style.marginTop = '14px'; nl.innerHTML = '<span>Anything they said <span class="hint">(optional)</span></span><textarea rows="2" maxlength="1000"></textarea>';
+  $('textarea', nl).value = (g.answer && g.answer.note) || ''; D.body.appendChild(nl);
+  if (g.answer) D.foot.appendChild(btn('Clear their answer', 'danger', function () { var r = clone(getReq(req.id)); r.guests.forEach(function (x) { if (x.id === g.id) delete x.answer; }); put(r, 'Cleared the answer from ' + (g.name || g.email)); D.close(); }));
+  D.foot.appendChild(btn('Cancel', 'ghost', D.close));
+  D.foot.appendChild(btn('Save their answer', '', function () {
+    var r = clone(getReq(req.id));
+    r.guests.forEach(function (x) {
+      if (x.id !== g.id) return;
+      x.answer = { yes: Object.keys(ans).filter(function (k) { return ans[k] === 'yes'; }), maybe: [], note: $('textarea', nl).value.trim(), at: Date.now(), via: 'manual', by: me().name };
+      if (!x.sentAt) x.sentAt = Date.now();
+    });
+    put(r, 'Entered the answer from ' + (g.name || g.email)); D.close();
+    var all = r.guests.every(function (x) { return x.answer; });
+    toast(all ? 'Everyone has answered. Pick the best time and press Book.' : 'Saved.');
+  }, 'check'));
+}
+
+/* ---------------- drafting an email ---------------- */
+var KINDS = {
+  ask: 'Ask them which times work',
+  follow: 'Follow up (no reply yet)',
+  confirm: 'Confirm the time that was booked',
+  other: 'Something else'
+};
+function timesBlock(req, tz) {
+  var slots = (req.slots || []).filter(function (s) { return s.s > Date.now(); }).sort(function (a, b) { return a.s - b.s; });
+  var byDay = [], last = '';
+  slots.forEach(function (s) { var d = fmtDay(s.s, tz, true); if (d !== last) { byDay.push({ d: d, t: [] }); last = d; } byDay[byDay.length - 1].t.push(fmtRange(s.s, s.e, tz)); });
+  return byDay.map(function (x) { return '\u2022 ' + x.d + ': ' + x.t.join(', '); }).join('\n') + (slots.length ? '\n(All times ' + zoneName(tz) + ' Time)' : '');
+}
+function senderSig() { var p = meP(), m = me(); return m.name + (p && p.role ? '\n' + p.role + ', MISMO' : '\nMISMO'); }
+function templateFor(kind, req, extra) {
+  var where = req.where === 'In person' ? 'in person' : req.where === 'Phone' ? 'by phone' : 'on ' + req.where;
+  var about = req.purpose ? ' ' + req.purpose.replace(/\s+$/, '').replace(/([^.!?])$/, '$1.') : '';
+  var sl = slotById(req, req.chosen);
+  var T = {
+    ask: { subject: 'Scheduling: ' + req.title, body: 'Hi {{FIRST_NAME}},\n\nI\u2019m helping set up \u201c' + req.title + '\u201d, a ' + (req.duration || 30) + '-minute meeting ' + where + '.' + about + '\n\nCould you let me know which of these times work for you?\n\n{{TIMES}}\n\n{{HOW_TO_ANSWER}}\n\nThank you,\n{{SIGNATURE}}' },
+    follow: { subject: 'Following up: ' + req.title, body: 'Hi {{FIRST_NAME}},\n\nJust following up on scheduling \u201c' + req.title + '\u201d. When you have a moment, could you let me know which of these times work for you?\n\n{{TIMES}}\n\n{{HOW_TO_ANSWER}}\n\nIf none of them work, just say so and I\u2019ll find some others.\n\nThank you,\n{{SIGNATURE}}' },
+    confirm: { subject: 'Confirmed: ' + req.title + (sl ? ' \u2014 ' + fmtDay(sl.s, ET, true) : ''), body: 'Hi {{FIRST_NAME}},\n\nThank you for your flexibility. \u201c' + req.title + '\u201d is confirmed for ' + (sl ? fmtDay(sl.s, ET, true) + ', ' + fmtRange(sl.s, sl.e, ET) + ' Eastern' : 'the time we agreed') + ', ' + where + '. A calendar invitation is on its way.\n\nLooking forward to speaking with you.\n\nBest,\n{{SIGNATURE}}' },
+    other: { subject: req.title, body: 'Hi {{FIRST_NAME}},\n\n' + (extra || '') + '\n\nBest,\n{{SIGNATURE}}' }
+  };
+  return T[kind];
+}
+function draftWithClaude(kind, req, recips, extra, tz) {
+  var sl = slotById(req, req.chosen);
+  var facts = [
+    'Meeting name: ' + req.title,
+    'What it is for: ' + (req.purpose || '(not given)'),
+    'Length: ' + (req.duration || 30) + ' minutes; where: ' + (req.where || 'Zoom'),
+    req.askedBy ? 'Requested by: ' + req.askedBy : '',
+    'Writing to: ' + recips.map(function (g) { return (g.name || g.email) + (g.org ? ' (' + g.org + ')' : ''); }).join('; '),
+    'MISMO people attending: ' + (req.internal || []).map(function (id) { var p = person(id); return p ? p.name + (p.role ? ', ' + p.role : '') : id; }).join('; '),
+    kind === 'confirm' && sl ? 'Booked time: ' + fmtDay(sl.s, ET, true) + ', ' + fmtRange(sl.s, sl.e, ET) + ' Eastern' : '',
+    kind === 'follow' ? 'Earlier emails about this so far: ' + Math.max.apply(null, recips.map(function (g) { return 1 + (g.followUps || []).length; })) : '',
+    'Sender: ' + me().name + (meP() && meP().role ? ', ' + meP().role : '') + ', MISMO (Mortgage Industry Standards Maintenance Organization)'
+  ].filter(Boolean).join('\n');
+  var goal = {
+    ask: 'Ask the recipient which of the offered times work for them. Briefly say what the meeting is.',
+    follow: 'A short, friendly follow-up: they have not yet said which times work. Do not guilt them. Offer to find other times if none work.',
+    confirm: 'Confirm the booked time, thank them, and say a calendar invitation is on its way. Do not list the other times.',
+    other: 'Write the email described in the sender\u2019s note.'
+  }[kind];
+  var prompt = 'Draft an email for a MISMO staff member to send. Warm, professional, concise (under 160 words before the times list), plain text, no markdown, no emoji.\n\n' +
+    'GOAL: ' + goal + '\n\nFACTS (use only these; never invent times, links, names or details):\n' + facts + '\n\n' +
+    (extra ? 'SENDER\u2019S NOTE (follow it): ' + extra + '\n\n' : '') +
+    (req.source ? 'THE EMAIL THAT ASKED FOR THIS MEETING (background only: use it for who asked, who introduced whom, what the meeting is about and the right tone; do not quote it, and never repeat phone numbers, links or anything not meant for the recipient):\n' + String(req.source).slice(0, 6000) + '\n\n' : '') +
+    'PLACEHOLDERS \u2014 put each of these on its own line exactly as written, and the app fills them in:\n' +
+    '{{FIRST_NAME}} after "Hi" in the greeting (e.g. "Hi {{FIRST_NAME}},")\n' +
+    (kind === 'ask' || kind === 'follow' ? '{{TIMES}} where the list of times goes\n{{HOW_TO_ANSWER}} right after the times (it says how to reply)\n' : '') +
+    '{{SIGNATURE}} as the very last line, after a sign-off such as "Best," or "Thank you,"\n\n' +
+    'Return ONLY JSON: {"subject": "...", "body": "..."}';
+  return ask(prompt).then(function (text) {
+    var j = jsonIn(text);
+    if (!j || !j.body || j.body.indexOf('{{SIGNATURE}}') < 0) throw err('BAD_DRAFT');
+    if ((kind === 'ask' || kind === 'follow') && j.body.indexOf('{{TIMES}}') < 0) j.body = j.body.replace('{{SIGNATURE}}', '{{TIMES}}\n\n{{HOW_TO_ANSWER}}\n\n{{SIGNATURE}}');
+    if ((kind === 'ask' || kind === 'follow') && j.body.indexOf('{{HOW_TO_ANSWER}}') < 0) j.body = j.body.replace('{{TIMES}}', '{{TIMES}}\n\n{{HOW_TO_ANSWER}}');
+    return { subject: String(j.subject || req.title).slice(0, 200), body: String(j.body) };
+  });
+}
+function fill(tpl, req, recips, tz, oneGuest) {
+  var names = recips.map(function (g) { return first(g.name) || g.email; });
+  var nm = names.length <= 1 ? (names[0] || 'there') : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+  var how = LINKS.live && oneGuest
+    ? 'You can tick the times that work for you here (it takes a minute, no sign-in):\n' + guestLink(req, oneGuest)
+    : 'Just reply to this email with the times that work' + (recips.length > 1 ? ' for each of you' : '') + '.';
+  return tpl.replace(/\{\{FIRST_NAME\}\}/g, nm).replace(/\{\{TIMES\}\}/g, timesBlock(req, tz)).replace(/\{\{HOW_TO_ANSWER\}\}/g, how).replace(/\{\{SIGNATURE\}\}/g, senderSig());
+}
+function owaCompose(to, cc, subject, body) {
+  var q = 'to=' + encodeURIComponent(to.join(',')) + (cc.length ? '&cc=' + encodeURIComponent(cc.join(',')) : '') + '&subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+  return 'https://outlook.office.com/mail/deeplink/compose?' + q;
+}
+function mailto(to, cc, subject, body) { return 'mailto:' + to.map(encodeURIComponent).join(',') + '?' + (cc.length ? 'cc=' + cc.map(encodeURIComponent).join(',') + '&' : '') + 'subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body); }
+
+function openDraft(req, kind, gids) {
+  req = getReq(req.id);
+  var D = dialog('Draft the email for me', true);
+  var guests = req.guests || [];
+  var form = el('div', 'form');
+  form.innerHTML = '<label class="f w6"><span>What kind of email</span><select id="d-kind"></select></label>' +
+    '<label class="f w3"><span>Times in</span><select id="d-tz"></select></label>' +
+    '<div class="f"><span>To</span><div class="chips" id="d-to"></div></div>' +
+    '<label class="f"><span class="grow-row"><input type="checkbox" id="d-cc"> <span>Copy the MISMO people on this meeting</span></span></label>' +
+    '<label class="f"><span>Anything to add or mention? <span class="hint">(optional \u2014 e.g. \u201cmention Kelly asked me to set this up\u201d or \u201ckeep it very short\u201d)</span></span><textarea id="d-extra" rows="2" maxlength="1000"></textarea></label>';
+  D.body.appendChild(form);
+  Object.keys(KINDS).forEach(function (k) { var o = el('option', null, esc(KINDS[k])); o.value = k; $('#d-kind', form).appendChild(o); });
+  $('#d-kind', form).value = kind || 'ask';
+  ZONES.forEach(function (z) { var o = el('option', null, esc(z.n)); o.value = z.v; $('#d-tz', form).appendChild(o); });
+  $('#d-tz', form).value = ET;
+  function paintTo() {
+    var k = $('#d-kind', form).value, box = $('#d-to', form); box.innerHTML = '';
+    var pre = gids && gids.length ? gids : guests.filter(function (g) {
+      if (k === 'ask') return !g.sentAt && !g.answer; if (k === 'follow') return !g.answer && g.sentAt; return true;
+    }).map(function (g) { return g.id; });
+    if (!pre.length && k !== 'follow') pre = guests.map(function (g) { return g.id; });
+    guests.forEach(function (g) {
+      var l = el('label', 'pick'); l.innerHTML = '<input type="checkbox" value="' + esc(g.id) + '"' + (pre.indexOf(g.id) >= 0 ? ' checked' : '') + '>' + personChip(g.name || g.email, g.answer ? 'answered' : g.sentAt ? 'asked' : 'not asked');
+      box.appendChild(l);
+    });
+    if (!guests.length) box.appendChild(el('span', 'small muted', 'No outside guests \u2014 the email goes to the MISMO people.'));
+    $('#d-cc', form).checked = k === 'confirm' || (k === 'ask' && !!req.askedBy);
+  }
+  paintTo();
+  $('#d-kind', form).onchange = function () { gids = null; paintTo(); };
+  var go = btn('Draft it', 'big', null, 'spark'); go.style.marginTop = '14px';
+  var say = el('span', 'small muted'); say.style.marginLeft = '10px';
+  D.body.appendChild(go); D.body.appendChild(say);
+  var out = el('div', 'draft-out'); out.hidden = true; D.body.appendChild(out);
+  D.foot.appendChild(btn('Close', 'ghost', D.close));
+
+  go.onclick = function () {
+    var k = $('#d-kind', form).value, tz = $('#d-tz', form).value, extra = $('#d-extra', form).value.trim();
+    var ids = $$('#d-to input:checked', form).map(function (i) { return i.value; });
+    var recips = guests.filter(function (g) { return ids.indexOf(g.id) >= 0; });
+    var internalPeople = (req.internal || []).map(person).filter(Boolean);
+    if (!recips.length && !guests.length) recips = internalPeople.map(function (p) { return { id: 'p-' + p.id, name: p.name, email: emailOf(p), internal: 1 }; });
+    if (!recips.length) { say.textContent = 'Tick at least one person.'; return; }
+    if ((k === 'ask' || k === 'follow') && !(req.slots || []).some(function (s) { return s.s > Date.now(); })) { say.textContent = 'Pick some times first.'; return; }
+    if (k === 'other' && !extra) { say.textContent = 'Say what the email should be about in the box above.'; return; }
+    go.disabled = true; say.innerHTML = '<span class="spinner"></span> Writing\u2026';
+    askReady().then(function (ok) {
+      if (!ok) return { d: templateFor(k, req, extra), byClaude: false };
+      return draftWithClaude(k, req, recips, extra, tz).then(function (d) { return { d: d, byClaude: true }; }, function () { return { d: templateFor(k, req, extra), byClaude: false }; });
+    }).then(function (res) {
+      go.disabled = false; go.querySelector('span').textContent = 'Draft it again';
+      say.textContent = res.byClaude ? 'Drafted by Claude. Read it over and change anything before you send.' : (PREVIEW ? 'Standard wording (in the preview Claude isn\u2019t connected; on the real site Claude writes it).' : 'Standard wording \u2014 Claude wasn\u2019t available just now.');
+      showDraft(out, req, k, recips, tz, res.d, $('#d-cc', form).checked ? internalPeople.map(emailOf).filter(Boolean) : []);
+    });
+  };
+  if (!guests.length || gids) setTimeout(function () { go.click(); }, 50);
+}
+function showDraft(out, req, kind, recips, tz, d, cc) {
+  out.hidden = false; out.innerHTML = '';
+  var perPerson = LINKS.live && (kind === 'ask' || kind === 'follow') && recips.length > 1 && !recips[0].internal;
+  var who = perPerson ? recips[0] : null;
+  if (perPerson) {
+    var sw = el('div', 'grow-row small'); sw.style.marginBottom = '10px';
+    sw.innerHTML = '<span>Each person gets their own private link, so send one email each. Showing the email for</span>';
+    var s = el('select'); s.style.width = 'auto';
+    recips.forEach(function (g) { var o = el('option', null, esc(g.name || g.email)); o.value = g.id; s.appendChild(o); });
+    s.onchange = function () { who = recips.find(function (g) { return g.id === s.value; }); paint(); };
+    sw.appendChild(s); out.appendChild(sw);
+  }
+  var subj = el('label', 'f'); subj.innerHTML = '<span>Subject</span><input type="text">';
+  var body = el('label', 'f'); body.style.marginTop = '10px'; body.innerHTML = '<span>Email <span class="hint">(you can edit it here)</span></span><textarea rows="14"></textarea>';
+  out.appendChild(subj); out.appendChild(body);
+  var row = el('div', 'grow-row'); row.style.marginTop = '12px'; out.appendChild(row);
+  function toList() { return (who ? [who] : recips).map(function (g) { return g.email; }).filter(Boolean); }
+  var marked = {};
+  function paint() {
+    if (sent) {
+      var targets = who ? [who] : recips, cur = getReq(req.id) || req;
+      var done = targets.every(function (t) { var g = (cur.guests || []).find(function (x) { return x.id === t.id; }); return marked[t.id] || (kind === 'ask' && g && g.sentAt); });
+      sent.disabled = done; sent.querySelector('span').textContent = done ? 'Marked as sent' : 'I sent it';
+    }
+    $('input', subj).value = d.subject;
+    $('textarea', body).value = fill(d.body, req, who ? [who] : recips, tz, who || (recips.length === 1 && !recips[0].internal ? recips[0] : null));
+  }
+  var sent = null;
+  row.appendChild(btn('Open in Outlook', '', function () { window.open(owaCompose(toList(), cc, $('input', subj).value, $('textarea', body).value), '_blank', 'noopener'); }, 'mail'));
+  row.appendChild(btn('Copy the email', 'ghost', function () { copy($('textarea', body).value).then(function () { toast('Copied. Paste it into a new email in Outlook.'); }); }));
+  var alt = el('a', 'small'); alt.textContent = 'or use my computer\u2019s email app'; alt.href = '#';
+  alt.onclick = function (e) { e.preventDefault(); location.href = mailto(toList(), cc, $('input', subj).value, $('textarea', body).value); };
+  row.appendChild(alt);
+  if ((kind === 'ask' || kind === 'follow') && !recips[0].internal && canEdit()) {
+    var sent = btn('I sent it', 'ghost', function () {
+      var targets = who ? [who.id] : recips.map(function (g) { return g.id; });
+      askDate({ title: 'When did you send it?', days: getReq(req.id).followDays, ok: 'Mark as sent' }).then(function (when) {
+        if (!when) return;
+        var r = clone(getReq(req.id)), names = [];
+        r.guests.forEach(function (g) {
+          if (targets.indexOf(g.id) < 0) return; names.push(g.name || g.email);
+          if (kind === 'ask' || !g.sentAt) g.sentAt = g.sentAt || when; else g.followUps = (g.followUps || []).concat(when);
+        });
+        targets.forEach(function (t) { marked[t] = 1; });
+        put(r, (kind === 'ask' ? 'Asked ' : 'Followed up with ') + names.join(', ') + sentOn(when));
+        toast('Noted. If ' + (names.length === 1 ? first(names[0]) + ' doesn\u2019t' : 'they don\u2019t') + ' answer, you\u2019ll be reminded on ' + dayWord(addBiz(when, r.followDays || DEFAULT_FOLLOW_DAYS)) + '.');
+        paint();
+      });
+    }, 'check');
+    row.appendChild(sent);
+    out.appendChild(el('p', 'small muted', 'After you send it from Outlook, press <b>I sent it</b> and pick the day you sent it, so the follow-up reminder counts from then.'));
+  }
+  paint();
+}
+
+/* ---------------- the calendar invite ---------------- */
+function attendees(req) {
+  var list = (req.internal || []).map(person).filter(Boolean).map(function (p) { return { name: p.name, email: emailOf(p) }; });
+  return list.concat((req.guests || []).map(function (g) { return { name: g.name, email: g.email }; })).filter(function (a) { return a.email && a.email.toLowerCase() !== String(req.owner || '').toLowerCase(); });
+}
+function inviteBody(req) { return (req.purpose ? req.purpose + '\n\n' : '') + (req.where === 'Zoom' || req.where === 'Microsoft Teams' ? '(Add the ' + req.where + ' link here.)\n\n' : '') + 'Scheduled with the MISMO Scheduler.'; }
+function owaInvite(req, sl) {
+  var iso = function (t) { return new Date(t).toISOString().replace(/\.\d{3}Z$/, 'Z'); };
+  return 'https://outlook.office.com/calendar/0/deeplink/compose?path=%2Fcalendar%2Faction%2Fcompose&rru=addevent' +
+    '&subject=' + encodeURIComponent(req.title) + '&startdt=' + encodeURIComponent(iso(sl.s)) + '&enddt=' + encodeURIComponent(iso(sl.e)) +
+    '&location=' + encodeURIComponent(req.where || '') + '&body=' + encodeURIComponent(inviteBody(req)) +
+    '&to=' + encodeURIComponent(attendees(req).map(function (a) { return a.email; }).join(','));
+}
+function downloadIcs(req, sl) {
+  var stamp = function (t) { return new Date(t).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, ''); };
+  var escI = function (s) { return String(s || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n'); };
+  var fold = function (line) { var out = ''; while (line.length > 74) { out += line.slice(0, 74) + '\r\n '; line = line.slice(74); } return out + line; };
+  var lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//MISMO//Scheduler//EN', 'CALSCALE:GREGORIAN', 'BEGIN:VEVENT',
+    'UID:' + req.id + '-' + sl.id + '@resources.mismo.org', 'DTSTAMP:' + stamp(Date.now()), 'DTSTART:' + stamp(sl.s), 'DTEND:' + stamp(sl.e),
+    'SUMMARY:' + escI(req.title), 'LOCATION:' + escI(req.where), 'DESCRIPTION:' + escI(inviteBody(req)),
+    'ORGANIZER;CN=' + escI(req.ownerName) + ':mailto:' + req.owner]
+    .concat(attendees(req).map(function (a) { return 'ATTENDEE;CN=' + escI(a.name) + ';ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:' + a.email; }))
+    .concat(['END:VEVENT', 'END:VCALENDAR']);
+  var blob = new Blob([lines.map(fold).join('\r\n')], { type: 'text/calendar' });
+  var a = el('a'); a.href = URL.createObjectURL(blob); a.download = req.title.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 60) + '.ics';
+  document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  toast('Downloaded. Open the file and Outlook shows the meeting, ready to send.');
+}
+
+/* ======================================================================
+   HOW IT WORKS
+   ====================================================================== */
+function viewHelp(app) {
+  var p = el('section', 'panel'), b = el('div', 'panel-b help'); p.appendChild(b);
+  b.innerHTML =
+    '<h2>The idea</h2><p>The Scheduler finds a meeting time that works for people inside and outside MISMO, writes the emails for you, and reminds you to follow up with anyone who hasn\u2019t answered.</p>' +
+    '<h2>Step by step</h2><ol>' +
+    '<li><b>Incoming.</b> Meeting requests emailed to scheduling@mismo.org show up here by themselves (once the email watcher is switched on). To have ones sent to you show up too, set an Outlook rule that redirects them to scheduling@mismo.org. Press <b>Start a request</b> and Claude reads the email for you, or <b>Draft a reply</b> to answer the person who asked.</li>' +
+    '<li><b>New Request.</b> Paste the email that asked for the meeting and press <b>Read it for me</b> \u2014 it fills in the name, who\u2019s coming from MISMO and who\u2019s coming from outside. Check it and save.</li>' +
+    '<li><b>Pick times.</b> A calendar opens showing when the MISMO people are free in Outlook (green). Click 3\u20136 start times, or press <b>Suggest 5 good times</b>.</li>' +
+    '<li><b>Draft the invitation email.</b> Claude writes it with the times listed. Press <b>Open in Outlook</b>, look it over, send it \u2014 then press <b>I sent it</b> and pick the day you sent it (today unless you\u2019re catching up). The follow-up clock counts from that day.</li>' +
+    '<li><b>Collect answers.</b> ' + (LINKS.live ? 'Each outside guest gets a private link where they tick the times that work; their answers appear here by themselves and you get an email. ' : '') + 'If someone replies by email, press <b>Enter their answer</b> and click Works / Can\u2019t for each time.</li>' +
+    '<li><b>Follow up.</b> If someone hasn\u2019t answered after the wait you chose (3 business days unless changed), they show on the <b>Follow Up</b> tab, and a \u201cFollow up\u201d task lands on your Team HQ board that day. Press <b>Draft follow-up email</b>.</li>' +
+    '<li><b>Book it.</b> The grid highlights the best time. Press <b>Book</b>, then <b>Create the invite in Outlook</b> to send the real calendar invite, and <b>Draft the confirmation email</b> if you want one.</li></ol>' +
+    '<h2>Good to know</h2><ul>' +
+    '<li>Everyone with access sees every request, so the team can cover for each other. Use <b>Mine</b> to see just yours.</li>' +
+    '<li>Outlook availability comes from the same place as Team HQ\u2019s \u201cWho is doing what.\u201d Anyone whose Outlook isn\u2019t connected shows as \u201cDon\u2019t know\u201d \u2014 click their squares in the grid to fill them in.</li>' +
+    '<li>Times show in the time zone you pick; emails list times in Eastern unless you choose another.</li>' +
+    '<li>The Scheduler never sends an email by itself. You always read and send it from Outlook.</li>' +
+    '<li>Access (Edit or View) is given in the admin panel\u2019s People &amp; Access, like every other tool. Ask Perry.</li></ul>';
+  app.appendChild(p);
+}
+
+/* ======================================================================
+   PREVIEW DATA (only when not on resources.mismo.org)
+   ====================================================================== */
+function etAt(iso, hhmm) { var p = hhmm.split(':'); return at(iso, (+p[0]) * 60 + (+p[1]), ET); }
+function previewRequests() {
+  var M = 60000;
+  var vq = { id: 'vq7m2k9p4a', title: 'Sample: MISMO Membership Info (made up)', purpose: 'Walk a made-up prospect through MISMO membership benefits.', duration: 30, where: 'Zoom', followDays: 3,
+    owner: 'vrios@mismo.org', ownerName: 'Vanessa Rios', askedBy: 'Kelly Bradshaw', askedByEmail: 'kbradshaw@mismo.org', inboxId: 'mkelly0001', createdAt: etAt('2026-10-27', '10:15'), createdBy: 'Vanessa Rios', internal: ['kelly', 'amy'],
+    slots: [['2026-11-03', '10:00'], ['2026-11-03', '14:00'], ['2026-11-04', '11:00'], ['2026-11-05', '10:00'], ['2026-11-05', '15:00']].map(function (x, i) { var s = etAt(x[0], x[1]); return { id: 'v' + i, s: s, e: s + 30 * M }; }),
+    guests: [
+      { id: 'g1', code: 'preview-riley', name: 'Riley Chen', email: 'riley.chen@example.com', org: 'Example Title Co', sentAt: etAt('2026-10-27', '11:05'), answer: { yes: ['v0', 'v2', 'v3'], maybe: [], note: 'Mornings are best for me.', at: etAt('2026-10-28', '09:40'), via: 'link' } },
+      { id: 'g2', code: 'preview-jordan', name: 'Jordan Park', email: 'jordan.park@example.com', org: 'Example Title Co', sentAt: etAt('2026-10-27', '11:05') }
+    ],
+    source: 'From: Bradshaw, Kelly <kbradshaw@mismo.org>\nTo: Critchley, Jonna; Rios, Vanessa\nCc: Moses, Amy\nSubject: Sample (made up): FW: Example Title Co - MISMO membership intro\n\nJC and VR,\n\nCould we get help scheduling a meeting \u201cMISMO Membership Info\u201d with:\n1. Kelly\n2. Amy\n3. Riley Chen\n4. Jordan Park\n\nFrom: Riley Chen <riley.chen@example.com>\nSent: Tuesday, October 27, 2026 9:14 AM\nTo: Bradshaw, Kelly <kbradshaw@mismo.org>\nCc: Jordan Park <jordan.park@example.com>\nSubject: Example Title Co - MISMO membership intro\n\nHi Kelly, we would like to learn more about MISMO membership. Jordan and I are open most mornings next week. (This is a made-up example.)',
+    log: [{ at: etAt('2026-10-27', '10:15'), by: 'Vanessa Rios', what: 'Started the request' }, { at: etAt('2026-10-27', '10:22'), by: 'Vanessa Rios', what: 'Offered 5 times' }, { at: etAt('2026-10-27', '11:05'), by: 'Vanessa Rios', what: 'Asked Riley Chen, Jordan Park' }, { at: etAt('2026-10-28', '09:40'), by: 'Riley Chen', what: 'Answered through their link' }],
+    updatedAt: etAt('2026-10-28', '09:40') };
+  var sd = { id: 'sd4n8q2r6t', title: 'Sample: Product Demo (made up)', purpose: 'A made-up demo for Casey Morgan of Example Servicing, with Jonathan and Perry.', duration: 30, where: 'Zoom', followDays: 3,
+    owner: 'vrios@mismo.org', ownerName: 'Vanessa Rios', askedBy: 'Jonathan Kearns', createdAt: etAt('2026-10-26', '13:00'), createdBy: 'Vanessa Rios', internal: ['jonathan', 'perry'],
+    slots: [['2026-11-02', '13:00'], ['2026-11-03', '15:00'], ['2026-11-04', '10:00']].map(function (x, i) { var s = etAt(x[0], x[1]); return { id: 's' + i, s: s, e: s + 30 * M }; }),
+    guests: [{ id: 'g3', code: 'preview-casey', name: 'Casey Morgan', email: 'casey.morgan@example.com', org: 'Example Servicing', sentAt: etAt('2026-10-26', '13:30'), answer: { yes: ['s1', 's2'], maybe: [], at: etAt('2026-10-28', '14:10'), via: 'manual', by: 'Vanessa Rios', note: 'Tuesday afternoon is best.' } }],
+    status: 'booked', chosen: 's1', bookedAt: etAt('2026-10-28', '16:56'),
+    log: [{ at: etAt('2026-10-26', '13:00'), by: 'Vanessa Rios', what: 'Started the request' }, { at: etAt('2026-10-28', '14:10'), by: 'Vanessa Rios', what: 'Entered the answer from Casey Morgan' }, { at: etAt('2026-10-28', '16:56'), by: 'Vanessa Rios', what: 'Booked for Tuesday, November 3, 3:00–3:30 PM EST' }],
+    updatedAt: etAt('2026-10-28', '16:56') };
+  var ex = { id: 'ex5c3w8y1z', title: 'Sample: Quarterly Check-in (made up)', purpose: 'A made-up request so you can see what an overdue follow-up looks like.', duration: 45, where: 'Microsoft Teams', followDays: 3,
+    owner: 'vrios@mismo.org', ownerName: 'Vanessa Rios', createdAt: etAt('2026-10-21', '15:00'), createdBy: 'Vanessa Rios', internal: ['jonna', 'brian'],
+    slots: [['2026-11-06', '10:00'], ['2026-11-09', '14:00'], ['2026-11-10', '11:00']].map(function (x, i) { var s = etAt(x[0], x[1]); return { id: 'e' + i, s: s, e: s + 45 * M }; }),
+    guests: [{ id: 'g4', code: 'preview-pat', name: 'Pat Example', email: 'pat@example.com', org: 'Example Lending', sentAt: etAt('2026-10-22', '10:00') }],
+    log: [{ at: etAt('2026-10-22', '10:00'), by: 'Vanessa Rios', what: 'Asked Pat Example' }], updatedAt: etAt('2026-10-22', '10:00') };
+  return [vq, sd, ex];
+}
+function previewInbox() {
+  var vq = previewRequests()[0];
+  return [
+    { id: 'mkelly0001', mailbox: 'scheduling@mismo.org', from: 'kbradshaw@mismo.org', fromName: 'Bradshaw, Kelly', to: 'Critchley, Jonna; Rios, Vanessa', cc: 'Moses, Amy',
+      subject: 'Sample (made up): FW: Example Title Co - MISMO membership intro', receivedAt: etAt('2026-10-27', '09:38'), body: vq.source.split('\n\n').slice(1).join('\n\n'), status: 'started', reqId: vq.id, by: 'Vanessa Rios' },
+    { id: 'msample0002', mailbox: 'scheduling@mismo.org', from: 'sample.sender@example.com', fromName: 'Sample Sender', to: 'scheduling@mismo.org',
+      subject: 'Sample (made up): Could we find 45 minutes with the eNote workgroup leads?', receivedAt: Date.now() - 2 * 3600000,
+      body: 'Hi team,\n\nCould you help set up a 45-minute call next week with the eNote workgroup co-chairs and our two product leads, Dana Lee (dana.lee@example.com) and Sam Ortiz (sam.ortiz@example.com)? Perry should join from MISMO.\n\nAny afternoon Tuesday through Thursday works on our side.\n\nThanks,\nSample Sender\nExample Lending', status: 'new' }
+  ];
+}
+function previewCalendars() {
+  var names = ['Workgroup call', 'Member call', '1:1', 'Standards review', 'Sponsor call', 'Planning', 'Board prep', 'Vendor demo'];
+  var by = {}, ids = ['brian', 'jonathan', 'amy', 'kelly', 'jonna', 'perry'];
+  var from = '2026-10-19', to = isoAdd(todayISO(ET) > '2026-11-20' ? todayISO(ET) : '2026-11-20', 21);
+  ids.forEach(function (pid, pi) {
+    var list = [], iso = from, n = 0;
+    while (iso <= to) {
+      if (!isWeekend(iso)) {
+        if (dow(iso) === 4) list.push({ s: etAt(iso, '09:00'), e: etAt(iso, '10:00'), show: 'busy', t: 'MISMO Team Meeting' });
+        for (var k = 0; k < 3; k++) {
+          var h = 9 + ((n * 7 + pi * 5 + k * 3) % 8), half = (n + k + pi) % 2 ? '30' : '00';
+          var s = etAt(iso, (h < 10 ? '0' : '') + h + ':' + half), len = ((n + k) % 3 + 1) * 30;
+          list.push({ s: s, e: s + len * 60000, show: (n + k + pi) % 9 === 0 ? 'tentative' : 'busy', t: names[(n + k + pi) % names.length] });
+        }
+        n++;
+      }
+      iso = isoAdd(iso, 1);
+    }
+    by[pid] = list;
+  });
+  /* keep the sample membership picture readable: Kelly and Amy free at most of the offered times, Amy busy at one */
+  var free = [['2026-11-03', '10:00'], ['2026-11-04', '11:00'], ['2026-11-05', '10:00'], ['2026-11-05', '15:00'], ['2026-11-03', '15:00'], ['2026-11-04', '10:00']].map(function (x) { return etAt(x[0], x[1]); });
+  Object.keys(by).forEach(function (pid) { by[pid] = by[pid].filter(function (x) { return !free.some(function (s) { return x.s < s + 45 * 60000 && x.e > s; }); }); });
+  by.amy.push({ s: etAt('2026-11-03', '13:30'), e: etAt('2026-11-03', '15:00'), show: 'busy', t: 'Member call' });
+  return by;
+}
+
+/* ======================================================================
+   START
+   ====================================================================== */
+(function theme() {
+  var b = $('#theme-btn');
+  function cur() { var t = document.documentElement.getAttribute('data-theme'); if (t) return t; return window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; }
+  function paint() { b.textContent = cur() === 'dark' ? 'Light' : 'Dark'; }
+  b.onclick = function () { document.documentElement.setAttribute('data-theme', cur() === 'dark' ? 'light' : 'dark'); paint(); try { localStorage.setItem('mismo.portal.theme', cur()); } catch (e) {} };
+  paint();
+})();
+
+/* a desktop alert while the page is open, once a day per person due */
+function alertDue() {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  var told = lsGet('told', {}), today = todayISO(ET), fresh = [];
+  followList(true).forEach(function (x) { if (x.st !== 'due') return; var k = x.r.id + ':' + x.g.id; if (told[k] !== today) { fresh.push(x); told[k] = today; } });
+  if (!fresh.length) return;
+  lsSet('told', told);
+  try { new Notification('Time to follow up', { body: fresh.map(function (x) { return (x.g.name || x.g.email) + ' — ' + x.r.title; }).join('\n'), tag: 'scheduler-follow' }); } catch (e) {}
+}
+
+function start() {
+  readHash();
+  if (!location.hash) STATE.tab = inboxNew().length ? 'inbox' : followList(true).length ? 'follow' : 'list';
+  render();
+  Promise.all([linksLive(), askReady()]).then(render);
+  setInterval(function () { if (!document.hidden) { render(); alertDue(); } }, 10 * 60000);
+  setTimeout(alertDue, 3000);
+}
+if (PREVIEW) {
+  previewRequests().forEach(function (r) { DB.server.docs[r.id] = r; });
+  previewInbox().forEach(function (x) { INBOX.server.docs[x.id] = x; });
+  DB.loaded = true; INBOX.loaded = true;
+  saveState('Preview · nothing is saved');
+  loadTeam().then(start);
+} else {
+  var go0 = function () {
+    var rs = RS();
+    if (!rs) { $('#app').innerHTML = '<div class="notice bad">The sign-in couldn’t load. Reload the page.</div>'; return; }
+    rs.requireAccess(PROJECT, { toolName: TOOL }).then(function () {
+      render();
+      return Promise.all([loadReqs(), loadTeam(), loadInbox()]).then(function () {
+        start();
+        /* bring Team HQ's reminders up to date (an outside guest may have answered by link) */
+        syncHqTasks(allReqs().filter(function (r) { return (r.guests || []).some(function (g) { return g.sentAt; }); }).map(function (r) { return r.id; }));
+      }, function (e) {
+        $('#app').innerHTML = '';
+        $('#app').appendChild(el('div', 'notice bad', e && e.code === 'UNKNOWN_PROJECT'
+          ? '<b>The Scheduler isn’t connected to saving yet.</b> Perry needs to finish the one-time setup in the README (the <span class="kbd">scheduler</span> entry in projects.json and the scheduler-data repository).'
+          : 'Couldn’t load the Scheduler (' + esc(e && (e.message || e.code)) + '). Reload the page to try again.'));
+      });
+    }, function () {
+      $('#app').innerHTML = '<div class="notice bad">Couldn’t reach resources.mismo.org to check your access. Check your connection and reload the page.</div>';
+    });
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go0); else go0();
+}
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+# Scheduler
+
+Finds a meeting time with people inside and outside MISMO. It proposes times from the team's Outlook
+availability, collects who can make which time, has Claude draft the emails, and reminds the organizer
+to follow up with anyone who hasn't answered.
+Live at **https://resources.mismo.org/scheduler/**, behind the shared resources.mismo.org sign-in.
+
+This repository is **public** and holds **no records**, only the pages. Requests live in the **private**
+repository `GitMISMO/scheduler-data` and are read and saved through the save relay under the project key
+`scheduler`. No token, key or record is ever kept here.
+
+| File | What it is |
+|---|---|
+| `index.html` | The staff tool: Follow Up, Requests, New Request, How It Works. Gated with `requireAccess('scheduler')`. |
+| `respond.html` | The page an outside guest opens from their email to mark which times work. No sign-in. |
+
+Opened anywhere other than resources.mismo.org, or with `?preview=1`, both pages run as a **preview** with
+sample data and save nothing.
+
+## Where things live
+
+| What | Where |
+|---|---|
+| Requests | `scheduler-data/data/requests.json`, shaped `{docs:{<id>:{…}}}`. One file. Each save sends the sha it read, and a 409 is re-applied on top. |
+| The team list and Outlook availability | **Read only**, from Team HQ: `team-hq/data/people` and `team-hq/data/cal-<person>` (the files Team HQ's Power Automate flow already writes). |
+| Follow-up reminders | **Written to Team HQ** as one task per request (`team-hq/data/tasks`, id `sched-<request id>`), titled "Follow up: <meeting>", owned by the organizer and due on the follow-up date. It is set to Done when everyone has answered, the meeting is booked or it is cancelled. That puts the reminder on the organizer's Team HQ board on the right day, whether or not anyone opens the Scheduler. |
+| Drafting emails | The relay's Ask route (`POST /scheduler/ask`). Needs `"ask": true` on the project. Without it, the page falls back to standard wording. |
+| Emailed requests (Incoming tab) | `scheduler-data/data/inbox.json`. A Power Automate flow on scheduling@mismo.org adds each new email through `POST /scheduler/inbox/add` (flow key; it can only add). Staff mark each one *started* (linked to a request) or *set aside*. |
+| Outside guests' answers | Two no-sign-in relay routes, `POST /scheduler/poll/view` and `/poll/answer` (relay request 11). Until they're live, the page says so and staff enter answers by hand. |
+
+A person needs **Scheduler** access (Edit or View) in People & Access. To see Outlook availability and get
+the Team HQ reminders, they also need **Team HQ** access, which every staff member already has. Without it
+the Scheduler still works; it just can't show availability or write the reminder.
+
+## A guest's link
+
+`respond.html#r=<request id>&g=<guest id>.<code>`. The code is 24 random characters made in the staff
+member's browser, stored only in the private data repository. It sits after the `#`, so it is never sent
+in an address a server logs or passed on as a referrer. The relay compares it in constant time and returns
+only what that one guest needs. It never returns other guests, the MISMO attendees, the original email or
+the log.
+
+## Updating
+
+Before uploading a new copy of a page, download the current one from GitHub first and make your changes to
+that copy. Uploading an older copy silently undoes everything that changed since.
+
+Storage keys are `tools:scheduler:<name>`. The page never calls `localStorage.clear()`.
