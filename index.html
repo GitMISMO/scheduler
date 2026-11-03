@@ -915,6 +915,16 @@ function calEv(x) {
    understands, so the grid, the suggestions and the clash warnings all work off
    it without knowing where it came from.
    -------------------------------------------------------------------------- */
+/* mismo.org is an alias of mba.org — the same mailbox either way — and people are
+   recorded under whichever one they happen to use (Perry is pwilliams@mba.org in
+   Team HQ, pwilliams@mismo.org in Outlook). Matching on the part before the @ for
+   those two domains keeps everybody lined up; anyone outside them is matched whole. */
+function avKey(email) {
+  var s = String(email || '').trim().toLowerCase(), at = s.lastIndexOf('@');
+  if (at < 0) return s;
+  var dom = s.slice(at + 1);
+  return (dom === 'mismo.org' || dom === 'mba.org') ? s.slice(0, at) : s;
+}
 var AV_SHOW = { '1': 'tentative', '2': 'busy', '3': 'oof' };
 var AV_LABEL = { '1': 'Tentative', '2': 'Busy', '3': 'Out of office' };
 function avBlocks(view, start, iv) {
@@ -939,11 +949,11 @@ function loadCalendars(force) {
     if (!isFinite(start)) { TEAM.calFrom = ''; return; }
     var byEmail = {};
     d.people.forEach(function (p) {
-      if (p && p.id && typeof p.view === 'string') byEmail[String(p.id).toLowerCase()] = p.view;
+      if (p && p.id && typeof p.view === 'string') byEmail[avKey(p.id)] = p.view;
     });
     var by = {};
     TEAM.people.forEach(function (person) {
-      var v = byEmail[String(person.email || '').toLowerCase()];
+      var v = byEmail[avKey(person.email || emailOf(person))];
       if (v) by[person.id] = avBlocks(v, start, iv);
     });
     TEAM.cal = by;
