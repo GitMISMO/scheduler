@@ -455,6 +455,38 @@ body.railmini .rail nav button .n{display:none}
 .savestate{margin-left:14px;font-size:11.5px;color:rgba(255,255,255,.72)}
 .savestate.bad{color:#ffb4a8}
 
+
+/* Team Availability grid */
+.calbar{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px}
+.calday{appearance:none;font:inherit;font-size:12.5px;font-weight:600;white-space:nowrap;min-width:max-content;
+  background:var(--surface);color:var(--ink-2);border:1px solid var(--border);border-radius:3px;padding:6px 11px;cursor:pointer}
+.calday:hover{border-color:var(--border-strong);color:var(--ink)}
+.calday.on{background:var(--navy);border-color:var(--navy);color:#fff}
+:root[data-theme="dark"] .calday.on{background:var(--sky);border-color:var(--sky);color:var(--navy-deep)}
+.cal-wrap{overflow-x:auto;padding:14px 16px}
+.calgrid{border-collapse:separate;border-spacing:0;font-size:12px;width:100%;table-layout:auto}
+.calgrid th,.calgrid td{padding:0}
+.calgrid .calname{width:1%;position:sticky;left:0;z-index:1;background:var(--surface);color:var(--ink);
+  font-weight:600;text-align:left;padding:0 14px 0 0;white-space:nowrap;min-width:max-content}
+.calhour{font-size:10px;color:var(--ink-3);font-weight:500;text-align:left;white-space:nowrap;padding-bottom:4px}
+.calcell{min-width:19px;height:23px;border-right:2px solid var(--surface);border-bottom:2px solid var(--surface);
+  background:var(--surface-3);border-radius:2px}
+.calcell.free{background:var(--sky-wash)}
+.calcell.tent{background:var(--warn)}
+.calcell.busy{background:var(--bad)}
+.calcell.oof{background:var(--ink-3)}
+.calcell.unk{background:repeating-linear-gradient(45deg,var(--surface-2),var(--surface-2) 3px,var(--surface-3) 3px,var(--surface-3) 6px)}
+.calsum .calcount{background:var(--surface-2);color:var(--ink-2);font-size:10.5px;font-weight:600;text-align:center;
+  font-variant-numeric:tabular-nums}
+.calsum .calcount.all{background:var(--good);color:#fff}
+.callegend{display:flex;gap:14px;flex-wrap:wrap;padding:0 16px 14px;font-size:12px;color:var(--ink-2)}
+.callegend i{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.callegend i.free{background:var(--sky-wash);outline:1px solid var(--border)}
+.callegend i.tent{background:var(--warn)}
+.callegend i.busy{background:var(--bad)}
+.callegend i.oof{background:var(--ink-3)}
+.callegend i.unk{background:repeating-linear-gradient(45deg,var(--surface-2),var(--surface-2) 3px,var(--surface-3) 3px,var(--surface-3) 6px);outline:1px solid var(--border)}
+.calfoot{padding:0 16px 14px;font-size:11.5px;color:var(--ink-3)}
 </style>
 </head>
 <body>
@@ -871,16 +903,54 @@ function calEv(x) {
   var s = calTime(x.s || x.start), e = calTime(x.e || x.end); if (s == null || e == null) return null;
   return { s: s, e: e, show: show, t: String(x.title || x.t || '').trim().slice(0, 80) };
 }
+/* ----------------------------------------------------------------------------
+   WHO IS FREE, FROM OUTLOOK
+   A Power Automate flow ("Scheduler - Team Availability") asks Microsoft for the
+   team's free/busy every half hour and writes it to data/availability.json here.
+   It writes FREE/BUSY ONLY: a row per person of one digit per half hour, counted
+   from "start" — 0 free, 1 tentative, 2 busy, 3 out of office. No meeting names,
+   no locations, no joining links ever leave Outlook, so nothing private lands in
+   a file the whole team can read.
+   This turns those digits back into the blocks the rest of the page already
+   understands, so the grid, the suggestions and the clash warnings all work off
+   it without knowing where it came from.
+   -------------------------------------------------------------------------- */
+var AV_SHOW = { '1': 'tentative', '2': 'busy', '3': 'oof' };
+var AV_LABEL = { '1': 'Tentative', '2': 'Busy', '3': 'Out of office' };
+function avBlocks(view, start, iv) {
+  var out = [], i = 0, n = view.length;
+  while (i < n) {
+    var c = view.charAt(i);
+    if (!AV_SHOW[c]) { i++; continue; }
+    var j = i; while (j < n && view.charAt(j) === c) j++;
+    out.push({ s: start + i * iv, e: start + j * iv, show: AV_SHOW[c], t: AV_LABEL[c] });
+    i = j;
+  }
+  return out;
+}
 function loadCalendars(force) {
   if (PREVIEW) return Promise.resolve();
-  if (!force && TEAM.calAt && Date.now() - TEAM.calAt < 10 * 60000) return Promise.resolve();
-  return Promise.all(TEAM.people.map(function (p) {
-    return readData(HQ, 'cal-' + p.id).then(function (b) { return [p.id, b && b.data]; }, function () { return [p.id, null]; });
-  })).then(function (list) {
+  if (!force && TEAM.calAt && Date.now() - TEAM.calAt < 5 * 60000) return Promise.resolve();
+  return readData(PROJECT, 'availability').then(function (b) {
+    var d = (b && (b.data || b.content)) || null;
+    TEAM.calAt = Date.now();
+    if (!d || !Array.isArray(d.people)) { TEAM.calFrom = ''; return; }
+    var start = Date.parse(d.start), iv = (Number(d.intervalMinutes) || 30) * 60000;
+    if (!isFinite(start)) { TEAM.calFrom = ''; return; }
+    var byEmail = {};
+    d.people.forEach(function (p) {
+      if (p && p.id && typeof p.view === 'string') byEmail[String(p.id).toLowerCase()] = p.view;
+    });
     var by = {};
-    list.forEach(function (x) { var d = x[1]; if (d && Array.isArray(d.ev) && d.ev.length) by[x[0]] = d.ev.map(calEv).filter(Boolean); });
-    TEAM.cal = by; TEAM.calAt = Date.now();
-  });
+    TEAM.people.forEach(function (person) {
+      var v = byEmail[String(person.email || '').toLowerCase()];
+      if (v) by[person.id] = avBlocks(v, start, iv);
+    });
+    TEAM.cal = by;
+    TEAM.calFrom = d.updatedAt || '';
+    TEAM.calStart = start;
+    TEAM.calEnd = start + iv * (d.people[0] && d.people[0].view ? d.people[0].view.length : 0);
+  }, function () { TEAM.calAt = Date.now(); TEAM.calFrom = ''; });
 }
 function hasCal(pid) { return !!TEAM.cal[pid]; }
 /* 'free' | 'busy' | 'tentative' | 'oof' | null (Outlook not connected) for a person over a stretch of time */
@@ -1039,7 +1109,7 @@ var STATE = { tab: 'follow', reqId: null, fuMine: lsGet('fuMine', true), listMin
 function readHash() {
   var h = location.hash.replace(/^#/, ''), m = /(?:^|&)r=([a-z0-9]+)/.exec(h), t = /(?:^|&)tab=([a-z]+)/.exec(h);
   STATE.reqId = m ? m[1] : null;
-  if (t && ['inbox', 'follow', 'list', 'new', 'help'].indexOf(t[1]) >= 0) STATE.tab = t[1];
+  if (t && ['inbox', 'follow', 'list', 'new', 'help', 'cal'].indexOf(t[1]) >= 0) STATE.tab = t[1];
 }
 function go(tab, reqId) {
   STATE.tab = tab || STATE.tab; STATE.reqId = reqId || null;
@@ -1065,7 +1135,7 @@ function render(opts) {
   if (DB.problem) app.appendChild(el('div', 'notice bad', esc(DB.problem)));
   if (!DB.loaded) { app.appendChild(el('div', 'empty', '<span class="spinner"></span> Loading…')); return; }
   if (STATE.reqId) { var r = getReq(STATE.reqId); if (r) viewDetail(app, r); else { app.appendChild(el('div', 'empty', 'That request isn’t here any more. <button class="linkbtn" type="button">See all requests</button>')); $('.linkbtn', app).onclick = function () { go('list'); }; } }
-  else ({ inbox: viewInbox, follow: viewFollow, list: viewList, 'new': viewNew, help: viewHelp })[STATE.tab](app);
+  else ({ inbox: viewInbox, follow: viewFollow, list: viewList, 'new': viewNew, help: viewHelp, cal: viewCalendar })[STATE.tab](app);
   if (keepFocus && document.getElementById(keepFocus)) try { document.getElementById(keepFocus).focus(); } catch (e) {}
 }
 $$('.tab').forEach(function (b) { b.addEventListener('click', function () { go(b.dataset.tab); }); });
@@ -1601,6 +1671,77 @@ function emailText(x) {
 }
 function displayName(x) { var n = String(x.fromName || '').trim(); if (/,/.test(n)) { var b = n.split(/\s*,\s*/); n = b[1] + ' ' + b[0]; } return n || x.from; }
 
+
+var CALV = { day: '' };
+function viewCalendar(app) {
+  var head = el('div', 'pagehead');
+  head.innerHTML = '<div class="grow"><h1>Team Availability</h1><p>Free and busy from Outlook for everyone at MISMO, refreshed every half hour. Meeting names, places and joining links are never brought across — only whether somebody is free.</p></div>';
+  app.appendChild(head);
+
+  var withCal = TEAM.people.filter(function (p) { return hasCal(p.id); });
+  if (!withCal.length) {
+    app.appendChild(el('div', 'panel', '<div class="empty">No availability has arrived yet. It is written every half hour by the <b>Scheduler - Team Availability</b> flow in Power Automate — if this stays empty, that flow is off or failing.</div>'));
+    return;
+  }
+
+  var days = bizDaysAhead(10);
+  if (!CALV.day || days.indexOf(CALV.day) < 0) CALV.day = days[0];
+
+  var bar = el('div', 'calbar');
+  days.forEach(function (iso) {
+    var b = el('button', 'calday' + (iso === CALV.day ? ' on' : ''), esc(fmtDay(at(iso, 0, VIEW_TZ), VIEW_TZ)));
+    b.type = 'button';
+    b.addEventListener('click', function () { CALV.day = iso; render({ full: true }); });
+    bar.appendChild(b);
+  });
+  app.appendChild(bar);
+
+  var M = 60000, half = 30 * M, first = at(CALV.day, 8 * 60, VIEW_TZ), cols = 20;
+  var panel = el('div', 'panel'), wrapEl = el('div', 'cal-wrap');
+  var tbl = document.createElement('table'); tbl.className = 'calgrid';
+
+  var thead = document.createElement('thead'), hr = document.createElement('tr');
+  hr.appendChild(el('th', 'calname', ''));
+  for (var c = 0; c < cols; c++) {
+    var th = document.createElement('th');
+    th.className = 'calhour';
+    if (c % 2 === 0) th.textContent = fmtTime(first + c * half, VIEW_TZ).replace(/:00/, '');
+    hr.appendChild(th);
+  }
+  thead.appendChild(hr); tbl.appendChild(thead);
+
+  var tb = document.createElement('tbody');
+  withCal.forEach(function (p) {
+    var tr = document.createElement('tr');
+    tr.appendChild(el('td', 'calname', esc(p.name)));
+    for (var c = 0; c < cols; c++) {
+      var s = first + c * half, st = calState(p.id, s, s + half);
+      var td = document.createElement('td');
+      td.className = 'calcell ' + (st === 'busy' ? 'busy' : st === 'tentative' ? 'tent' : st === 'oof' ? 'oof' : st === 'free' ? 'free' : 'unk');
+      td.title = p.name + ' · ' + fmtTime(s, VIEW_TZ) + ' · ' + (st === 'oof' ? 'Out of office' : st === 'busy' ? 'Busy' : st === 'tentative' ? 'Tentative' : st === 'free' ? 'Free' : 'Not known');
+      tr.appendChild(td);
+    }
+    tb.appendChild(tr);
+  });
+
+  var sr = document.createElement('tr'); sr.className = 'calsum';
+  sr.appendChild(el('td', 'calname', 'Everyone free'));
+  for (var c2 = 0; c2 < cols; c2++) {
+    var s2 = first + c2 * half, free = 0;
+    withCal.forEach(function (p) { if (calState(p.id, s2, s2 + half) === 'free') free++; });
+    var td2 = el('td', 'calcell calcount' + (free === withCal.length ? ' all' : ''), String(free));
+    td2.title = free + ' of ' + withCal.length + ' free at ' + fmtTime(s2, VIEW_TZ);
+    sr.appendChild(td2);
+  }
+  tb.appendChild(sr);
+
+  tbl.appendChild(tb); wrapEl.appendChild(tbl); panel.appendChild(wrapEl);
+  var leg = el('div', 'callegend');
+  leg.innerHTML = '<span><i class="free"></i>Free</span><span><i class="tent"></i>Tentative</span><span><i class="busy"></i>Busy</span><span><i class="oof"></i>Out of office</span><span><i class="unk"></i>Not known</span>';
+  panel.appendChild(leg);
+  if (TEAM.calFrom) panel.appendChild(el('div', 'calfoot', 'Outlook last read ' + esc(fmtTime(Date.parse(TEAM.calFrom), VIEW_TZ)) + ' · times shown in ' + esc(VIEW_TZ)));
+  app.appendChild(panel);
+}
 function viewInbox(app) {
   var head = el('div', 'pagehead');
   head.innerHTML = '<div class="grow"><h1>Incoming</h1><p>Meeting requests that came in by email to scheduling@mismo.org (including the ones your Outlook rule sends there). Start a request from one, or have Claude draft a reply to the person who asked.</p></div>';
@@ -2480,7 +2621,6 @@ Object.defineProperty(window,'INBOX',{get:function(){return window.__sched.INBOX
     });
   }
   function open(tab){
-    if(tab==='cal'){ showCalendar(); mark('cal'); return; }
     if(window.go) window.go(tab);
     mark(tab);
   }
@@ -2511,19 +2651,6 @@ Object.defineProperty(window,'INBOX',{get:function(){return window.__sched.INBOX
     el.textContent=String(n); el.setAttribute('data-z', n>0?'0':'1');
   }
 
-  /* Calendar: the section is here, the free/busy feed is not connected yet */
-  function showCalendar(){
-    var app=document.getElementById('app'); if(!app) return;
-    if(location.hash!=='#tab=cal') history.pushState(null,'','#tab=cal');
-    app.innerHTML =
-      '<div class="wrap">'+
-      '<h2 class="sect-h">Team Availability</h2>'+
-      '<div class="notice">Nobody’s calendar is being read yet. Once the free/busy feed is connected, '+
-      'this is where the week shows who is free — Amy, Brian, Kelly, Perry, Jonathan, Jonna and Vanessa — '+
-      'and the Scheduler can say whether a time somebody offered actually works.</div>'+
-      '</div>';
-    window.scrollTo(0,0);
-  }
 })();
 </script>
 
