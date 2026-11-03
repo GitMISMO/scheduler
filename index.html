@@ -1073,9 +1073,33 @@ var PHASE = {
 function phasePill(req) { var p = PHASE[phase(req)]; return '<span class="pill ' + p.c + '">' + p.n + '</span>'; }
 function slotById(req, id) { return (req.slots || []).find(function (s) { return s.id === id; }) || null; }
 /* everyone's answer for one time: 'yes' | 'maybe' | 'no' | null */
+/* ----------------------------------------------------------------------------
+   A HALF HOUR THIS TEAM HAS ALREADY GIVEN AWAY
+   When a meeting here is booked, that time is spoken for — but Outlook does not
+   know it yet. The invite still has to be looked over and sent, and even once it
+   is, the free/busy feed only comes round every half hour. In between the same
+   slot would keep being offered on every other request still open, and two
+   meetings end up promised the same person at the same time.
+   So a booked meeting here counts against anybody who is in both requests, at
+   once, without waiting for Outlook to catch up. It can still be overridden by
+   hand for a deliberate double-booking.
+   -------------------------------------------------------------------------- */
+function takenFor(req, pid, sl) {
+  var rs = allReqs();
+  for (var i = 0; i < rs.length; i++) {
+    var o = rs[i];
+    if (!o || o.id === req.id || o.status !== 'booked' || !o.chosen) continue;
+    if ((o.internal || []).indexOf(pid) < 0) continue;
+    var c = (o.slots || []).filter(function (x) { return x && x.id === o.chosen; })[0];
+    if (c && isFinite(c.s) && isFinite(c.e) && c.s < sl.e && c.e > sl.s) return o;
+  }
+  return null;
+}
 function internalAnswer(req, pid, sl) {
   var hand = req.internalAns && req.internalAns[pid] && req.internalAns[pid][sl.id];
   if (hand) return { v: hand, hand: 1 };
+  var bk = takenFor(req, pid, sl);
+  if (bk) return { v: 'no', booked: bk };
   var c = calState(pid, sl.s, sl.e);
   if (c === null) return { v: null };
   return { v: c === 'free' ? 'yes' : c === 'tentative' ? 'maybe' : 'no', cal: 1, what: c === 'free' ? '' : calWhat(pid, sl.s, sl.e) };
@@ -1575,7 +1599,7 @@ function gridFor(req, editable) {
       tr.innerHTML = '<td><b>' + esc(p.name) + '</b><div class="small muted">' + (hasCal(pid) ? 'Outlook connected' : 'Outlook not connected — click to set') + '</div></td>';
       slots.forEach(function (sl) {
         var a = internalAnswer(req, pid, sl), td = el('td', 'c');
-        td.innerHTML = cellHTML(a.v, a.hand ? 'Set by hand. Click to change.' : a.cal ? (a.what ? 'Outlook: ' + a.what : 'Free in Outlook') + (editable ? ' · Click to override' : '') : 'Click to set', editable);
+        td.innerHTML = cellHTML(a.v, a.hand ? 'Set by hand. Click to change.' : a.booked ? 'Already booked here: ' + (a.booked.title || 'another meeting') + (editable ? ' · Click to override' : '') : a.cal ? (a.what ? 'Outlook: ' + a.what : 'Free in Outlook') + (editable ? ' · Click to override' : '') : 'Click to set', editable);
         if (editable) $('button', td).onclick = function () {
           var r = clone(getReq(req.id)); r.internalAns = r.internalAns || {}; r.internalAns[pid] = r.internalAns[pid] || {};
           var cur = r.internalAns[pid][sl.id] || null, order = [null, 'yes', 'no'], nx = order[(order.indexOf(cur) + 1) % order.length];
