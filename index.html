@@ -1095,6 +1095,117 @@ function takenFor(req, pid, sl) {
   }
   return null;
 }
+
+/* ============================================================================
+   THE POLL EMAIL, AND HOW IT GETS SENT
+   MISMO already has one way of sending branded email and this uses it rather
+   than inventing a second. Member 360 writes a batch into data/outbox.json in
+   its own private repository; the commit wakes a Power Automate flow, which
+   sends each one from the sender's own Outlook and records the result in
+   data/outbox-sent.json. The Sponsorship Portal does the same. So does this.
+   Nothing here sends anything by itself — writing the batch is the whole job,
+   and the flow is the only thing that can put a message on the wire.
+   The frame below is the one Member 360, the CMS and Summit HQ already use, so
+   a guest sees the same MISMO email whichever tool it came from.
+   ========================================================================== */
+var EMAIL_LOGO = 'https://resources.mismo.org/member-360/mismo-logo-email.png';
+var OUTBOX_KEEP = 60;
+function escH(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function emailShell(inner, label) {
+  var F = 'font-family:Arial,Helvetica,sans-serif';
+  return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>' +
+  '<body style="margin:0;padding:0;background:#f1f6fa">' +
+  '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;background:#f1f6fa"><tr><td align="center" style="padding:24px 12px">' +
+  '<table role="presentation" width="640" cellpadding="0" cellspacing="0" style="width:100%;max-width:640px;background:#ffffff;border:1px solid #d5e2ed;border-radius:8px">' +
+  '<tr><td style="background:#0d314c;padding:16px 32px;border-radius:7px 7px 0 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td valign="middle"><table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="background:#ffffff;border-radius:5px;padding:8px 12px"><img src="' + EMAIL_LOGO + '" alt="MISMO" width="132" style="display:block;border:0;outline:none;width:132px;height:auto"></td></tr></table></td><td valign="middle" align="right" style="' + F + ';font-size:13px;font-weight:600;color:#a9d8f3">' + escH(label || 'Scheduling') + '</td></tr></table></td></tr>' +
+  '<tr><td style="height:3px;line-height:3px;font-size:0;background:#74bfeb">&nbsp;</td></tr>' +
+  '<tr><td style="padding:26px 32px 14px;' + F + ';font-size:15px;line-height:1.6;color:#0d314c">' + inner + '</td></tr>' +
+  '<tr><td style="padding:0 0 12px;font-size:0;line-height:0">&nbsp;</td></tr>' +
+  '<tr><td style="background:#0d314c;padding:14px 32px;border-radius:0 0 7px 7px;' + F + ';font-size:12px;line-height:1.5;color:#a9d8f3">MISMO &middot; Mortgage Industry Standards Maintenance Organization &middot; ' +
+  '<a href="https://www.mismo.org" style="color:#ffffff;text-decoration:underline">mismo.org</a></td></tr>' +
+  '</table></td></tr></table></body></html>';
+}
+function slotsInOrder(req) {
+  return (req.slots || []).filter(function (s) { return s && isFinite(s.s) && isFinite(s.e); })
+    .slice().sort(function (a, b) { return a.s - b.s; });
+}
+function slotLine(sl) { return fmtDay(sl.s, ET, true) + ' · ' + fmtTime(sl.s, ET) + '–' + fmtTime(sl.e, ET) + ' ET'; }
+function pollEmailHtml(req, g) {
+  var F = 'font-family:Arial,Helvetica,sans-serif', link = guestLink(req, g);
+  var rows = slotsInOrder(req).map(function (sl) {
+    return '<tr><td style="padding:8px 0;border-bottom:1px solid #e5eef5;' + F + ';font-size:15px;color:#0d314c">' + escH(slotLine(sl)) + '</td></tr>';
+  }).join('');
+  var inner = '<p style="margin:0 0 14px">Hello ' + escH(first(g.name) || 'there') + ',</p>' +
+    '<p style="margin:0 0 14px">' + escH(req.ownerName || 'MISMO') + ' would like to set up <b>' + escH(req.title || 'a meeting') + '</b>' +
+    (req.duration ? ' (' + escH(String(req.duration)) + ' minutes)' : '') + '.</p>' +
+    (req.purpose ? '<p style="margin:0 0 14px">' + escH(req.purpose) + '</p>' : '') +
+    '<p style="margin:0 0 8px">Here are the times on offer:</p>' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;margin:0 0 20px">' + rows + '</table>' +
+    '<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 18px"><tr><td style="background:#0d314c;border-radius:5px">' +
+    '<a href="' + escH(link) + '" style="display:inline-block;white-space:nowrap;min-width:max-content;padding:12px 22px;' + F +
+    ';font-size:15px;font-weight:700;color:#ffffff;text-decoration:none">Mark the Times That Work&nbsp;&rarr;</a></td></tr></table>' +
+    '<p style="margin:0 0 14px">Tick the ones that suit and leave the rest — there is a box for a note if none of them do. ' +
+    'The link is yours alone; nobody else’s answers are shown on it.</p>' +
+    '<p style="margin:0">Thank you,<br>' + escH(req.ownerName || 'MISMO') + '</p>';
+  return emailShell(inner, 'Scheduling');
+}
+function pollEmailText(req, g) {
+  var link = guestLink(req, g);
+  return 'Hello ' + (first(g.name) || 'there') + ',\n\n' +
+    (req.ownerName || 'MISMO') + ' would like to set up "' + (req.title || 'a meeting') + '"' +
+    (req.duration ? ' (' + req.duration + ' minutes)' : '') + '.\n\n' +
+    (req.purpose ? req.purpose + '\n\n' : '') +
+    'Here are the times on offer:\n' + slotsInOrder(req).map(function (sl) { return '  • ' + slotLine(sl); }).join('\n') +
+    '\n\nMark the ones that work:\n' + link +
+    '\n\nThe link is yours alone; nobody else’s answers are shown on it.\n\nThank you,\n' + (req.ownerName || 'MISMO') + '\n';
+}
+/* one batch into data/outbox.json, the way Member 360 does it */
+function outboxAdd(batch) {
+  return readData(PROJECT, 'outbox').then(function (b) {
+    var cur = (b && (b.data || b.content)) || {};
+    var docs = (cur.docs && typeof cur.docs === 'object') ? cur.docs : {};
+    docs[batch.id] = batch;
+    var keys = Object.keys(docs).sort(function (x, y) { return (docs[x].at || 0) - (docs[y].at || 0); });
+    while (keys.length > OUTBOX_KEEP) delete docs[keys.shift()];
+    var next = { docs: docs };
+    /* Power Automate can loop over a list but not over an object, so the same
+       batches ride along as a plain list (Member 360 and Sponsorship do this) */
+    next.list = Object.keys(docs).map(function (k) { return Object.assign({ id: k }, docs[k]); });
+    return writeData(PROJECT, 'outbox', next, (b && b.sha) || null);
+  });
+}
+function sendPoll(req, guests) {
+  var list = (guests || []).filter(function (g) { return g && g.email && g.code; });
+  if (!list.length) return Promise.resolve(0);
+  if (!slotsInOrder(req).length) { toast('Add some times first — there is nothing to ask about yet.'); return Promise.resolve(0); }
+  var m = me();
+  var batch = {
+    id: 'ob' + rid(10), kind: 'scheduler-poll', at: Date.now(),
+    from: m.email, fromName: m.name, requestId: req.id, requestTitle: req.title || '',
+    emails: list.map(function (g) {
+      return {
+        to: g.email, toName: g.name || '', guestId: g.id,
+        subject: 'Finding a Time for ' + (req.title || 'a MISMO Meeting'),
+        html: pollEmailHtml(req, g), text: pollEmailText(req, g)
+      };
+    })
+  };
+  return outboxAdd(batch).then(function () {
+    var r = clone(getReq(req.id)) || clone(req), now = Date.now();
+    (r.guests || []).forEach(function (g) {
+      if (list.some(function (x) { return x.id === g.id; }) && !g.sentAt) g.sentAt = now;
+    });
+    r.log = (Array.isArray(r.log) ? r.log : []).concat({ at: now, by: m.name, what: 'Poll emailed to ' + list.length + (list.length === 1 ? ' guest' : ' guests') }).slice(-80);
+    put(r);
+    toast('Queued for ' + list.length + (list.length === 1 ? ' guest' : ' guests') + '. The Scheduler Emails flow sends it.');
+    render({ full: true });
+    return list.length;
+  }, function (e) {
+    toast('Could not queue it (' + ((e && (e.message || e.code)) || 'unknown') + '). Nothing was sent.', 1);
+    return 0;
+  });
+}
+
 function internalAnswer(req, pid, sl) {
   var hand = req.internalAns && req.internalAns[pid] && req.internalAns[pid][sl.id];
   if (hand) return { v: hand, hand: 1 };
@@ -1507,7 +1618,8 @@ function viewDetail(app, req) {
   pG.innerHTML = '<div class="panel-h"><span class="step">2</span><h2>Outside guests</h2><span class="sub">' + (LINKS.live ? 'Each gets a private link to mark the times that work' : 'Enter their answers when they reply') + '</span></div>';
   var ga = el('div', 'acts'); $('.panel-h', pG).appendChild(ga);
   var unsent = (req.guests || []).filter(function (g) { return !g.sentAt && !g.answer; });
-  if (editable && unsent.length && (req.slots || []).length && req.status !== 'booked') ga.appendChild(btn('Draft the invitation email', 'sm', function () { openDraft(req, 'ask', unsent.map(function (g) { return g.id; })); }, 'spark'));
+  if (editable && unsent.length && (req.slots || []).length && req.status !== 'booked') ga.appendChild(btn('Send the Poll', 'sm', function () { sendPoll(req, unsent); }));
+    if (editable && unsent.length && (req.slots || []).length && req.status !== 'booked') ga.appendChild(btn('Draft the invitation email', 'ghost sm', function () { openDraft(req, 'ask', unsent.map(function (g) { return g.id; })); }, 'spark'));
   var gb = el('div', 'panel-b'); pG.appendChild(gb);
   if (LINKS.live === false && (req.guests || []).length) gb.appendChild(el('div', 'notice warn', '<b>Self-serve links aren’t switched on yet.</b> Until Perry turns them on (see the README), your emails ask guests to reply with the times that work, and you click <b>Enter their answer</b> when they do.'));
   if (!(req.guests || []).length) gb.appendChild(el('div', 'empty', 'Only MISMO people on this one. ' + (editable ? '<button class="linkbtn" type="button" id="addg">Add someone from outside</button>' : '')));
