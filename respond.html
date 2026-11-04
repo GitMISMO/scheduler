@@ -74,7 +74,13 @@ select:focus,textarea:focus{outline:2px solid var(--sky);border-color:var(--sky)
 .row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 0;border-top:1px solid var(--rule)}
 .row .t{font-weight:600;font-size:15.5px}
 .tri{display:inline-flex;border:1px solid var(--border-strong);border-radius:8px;overflow:hidden}
-.tri button{appearance:none;border:0;border-right:1px solid var(--border);background:var(--surface);padding:8px 14px;font-size:14px;font-weight:600;cursor:pointer;color:var(--ink-2);min-width:76px}
+.tri button{appearance:none;border:0;border-right:1px solid var(--border);background:var(--surface);padding:7px 16px;cursor:pointer;min-width:58px;display:inline-flex;align-items:center;justify-content:center;line-height:0}
+.tri button svg{width:20px;height:20px;fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.tri button.y svg{stroke:var(--good)}
+.tri button.n svg{stroke:var(--bad)}
+.tri button[aria-pressed="true"] svg{stroke:#fff}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .tri button[aria-pressed="true"] svg{stroke:#06202f} }
+:root[data-theme="dark"] .tri button[aria-pressed="true"] svg{stroke:#06202f}
 .tri button:last-child{border-right:0}
 .tri button:focus-visible{outline:2px solid var(--sky);outline-offset:-2px}
 .tri button[aria-pressed="true"].y{background:var(--good);color:#fff}
@@ -192,8 +198,8 @@ c57 -33 76 -84 76 -200 0 -116 -19 -167 -76 -200 -32 -19 -52 -20 -294 -20
       var label = time(sl.s) + ' – ' + time(sl.e) + ' ' + abbr(sl.s);
       row.innerHTML = '<span class="t">' + esc(label) + '</span>';
       var tri = document.createElement('div'); tri.className = 'tri'; tri.setAttribute('role', 'group'); tri.setAttribute('aria-label', d + ' ' + label);
-      [['yes', 'Works', 'y'], ['no', 'Can’t', 'n']].forEach(function (o) {
-        var b = document.createElement('button'); b.type = 'button'; b.className = o[2]; b.textContent = o[1];
+      [['yes', 'Works', 'y', '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg>'], ['no', 'Can’t make it', 'n', '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>']].forEach(function (o) {
+        var b = document.createElement('button'); b.type = 'button'; b.className = o[2]; b.innerHTML = o[3]; b.setAttribute('aria-label', o[1]); b.title = o[1];
         b.setAttribute('aria-pressed', String(ans[sl.id] === o[0]));
         b.onclick = function () { ans[sl.id] = o[0]; Array.prototype.forEach.call(tri.children, function (x) { x.setAttribute('aria-pressed', String(x === b)); }); $('say').textContent = ''; };
         tri.appendChild(b);
@@ -213,7 +219,7 @@ c57 -33 76 -84 76 -200 0 -116 -19 -167 -76 -200 -32 -19 -52 -20 -294 -20
     (d.answer && d.answer.yes || []).forEach(function (id) { ans[id] = 'yes'; });
     if (d.answer) d.slots.forEach(function (s) { if (!ans[s.id]) ans[s.id] = 'no'; });
     $('title').textContent = d.title;
-    $('lede').textContent = 'Hi ' + (String(d.guest || '').split(/\s+/)[0] || 'there') + ' — ' + (d.organizer || 'MISMO') + ' is finding a time for this meeting. Mark each time below, then press Send.';
+    $('lede').textContent = 'Hi ' + (String(d.guest || '').split(/\s+/)[0] || 'there') + ' — ' + (d.organizer || 'MISMO') + ' is finding a time for this meeting. Tick ✓ for the times that work and ✗ for the ones that don’t, then press Send.';
     $('facts').innerHTML = '<span>' + esc(d.duration || 30) + ' minutes</span>' + (d.where ? '<span>' + esc(d.where) + '</span>' : '') + (d.purpose ? '<span style="flex-basis:100%">' + esc(d.purpose) + '</span>' : '');
     $('msg').value = (d.answer && d.answer.note) || '';
     if (d.answer) $('state').innerHTML = '<div class="note ok">You answered on ' + esc(new Date(d.answer.at).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })) + '. Change anything below and send again.</div>';
@@ -224,7 +230,7 @@ c57 -33 76 -84 76 -200 0 -116 -19 -167 -76 -200 -32 -19 -52 -20 -294 -20
   $('form').addEventListener('submit', function (e) {
     e.preventDefault();
     var missing = DATA.slots.filter(function (s) { return !ans[s.id]; });
-    if (missing.length === DATA.slots.length) { $('say').textContent = 'Mark at least one time as Works or Can’t.'; return; }
+    if (missing.length === DATA.slots.length) { $('say').textContent = 'Tick ✓ or ✗ for at least one time.'; return; }
     var body = { r: R, g: G, yes: [], maybe: [], note: $('msg').value.trim(), startedAt: started, website: $('website').value };
     DATA.slots.forEach(function (s) { if (ans[s.id] === 'yes') body.yes.push(s.id); });
     $('send').disabled = true; $('say').textContent = 'Sending…';
