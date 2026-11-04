@@ -45,7 +45,7 @@ if (window.SCHED_PREVIEW) document.documentElement.removeAttribute('data-rs-gate
   --free:#d9efe5; --some:#fbecc9; --busy:#f3d6d2; --unk:#eef3f7; --pick:#0d314c; --pick-ink:#fff;
   --shadow:0 1px 2px rgba(13,49,76,.06),0 4px 14px rgba(13,49,76,.05);
   --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --mono:var(--sans);
   color-scheme:light;
 }
 @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
@@ -171,6 +171,33 @@ main{max-width:1180px;margin:0 auto;padding:24px 16px 80px}
 .seg button[aria-pressed="true"]{background:var(--navy);color:#fff}
 :root[data-theme="dark"] .seg button[aria-pressed="true"]{background:var(--sky);color:var(--navy-deep)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .seg button[aria-pressed="true"]{background:var(--sky);color:var(--navy-deep)}}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}
+@media(max-width:760px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.stat{appearance:none;text-align:left;background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--sky);border-radius:8px;padding:12px 14px;cursor:pointer;color:var(--ink);box-shadow:var(--shadow);font:inherit}
+.stat:hover{border-color:var(--border-strong)}
+.stat[aria-pressed="true"]{outline:2px solid var(--navy);outline-offset:-1px}
+:root[data-theme="dark"] .stat[aria-pressed="true"]{outline-color:var(--sky)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .stat[aria-pressed="true"]{outline-color:var(--sky)}}
+.stat b{display:block;font-size:26px;line-height:1.1;font-variant-numeric:tabular-nums}
+.stat span{display:block;font-size:12px;font-weight:600;color:var(--ink-2);margin-top:3px;white-space:nowrap}
+.stat.hot{border-top-color:var(--bad)}.stat.hot b{color:var(--bad)}
+.stat.good{border-top-color:var(--good)}
+.flow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+@media(max-width:760px){.flow{grid-template-columns:1fr 1fr}}
+@media(max-width:420px){.flow{grid-template-columns:1fr}}
+.flow div{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;box-shadow:var(--shadow)}
+.flow div .step{margin-bottom:8px}
+.flow h3{font-size:14px;margin:0 0 4px}
+.flow p{margin:0;font-size:13px;color:var(--ink-2)}
+.auto-tag{display:inline-flex;align-items:center;font-size:11px;font-weight:700;padding:1px 7px;border-radius:3px;background:var(--sky-wash);color:var(--navy-mid);border:1px solid var(--sky)}
+.robotfacts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}
+@media(max-width:760px){.robotfacts{grid-template-columns:1fr 1fr}}
+.robotfacts div{background:var(--surface-2);border:1px solid var(--rule);border-radius:7px;padding:10px 12px;min-width:0}
+.robotfacts small{display:block;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-3)}
+.robotfacts b{display:block;font-size:14px;margin-top:2px;overflow-wrap:anywhere}
+table.mails{width:100%;border-collapse:collapse;font-size:13px}
+table.mails th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);padding:6px 8px;border-bottom:1px solid var(--border)}
+table.mails td{padding:7px 8px;border-bottom:1px solid var(--rule);vertical-align:top;font-variant-numeric:tabular-nums}
 .reqs{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px}
 @media(max-width:520px){.reqs{grid-template-columns:1fr}}
 .req{appearance:none;text-align:left;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;cursor:pointer;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:8px;color:var(--ink)}
@@ -325,6 +352,7 @@ html[data-season="december"] .santa{display:block}
 
 @media(max-width:520px){
 .hqtop{padding:0 12px}
+.hqtop .savestate{display:none}
 .hqtop .mastrule{margin-inline:12px}
 .logoplate{padding:7px 10px}
 .logoplate .wordmark{height:19px}
@@ -795,6 +823,27 @@ function keepGuestAnswers(onFile, mine) {
     out.guests.forEach(function (g) { if (g && g.id) hav[g.id] = 1; });
     onFile.guests.forEach(function (g) { if (g && g.id && !hav[g.id] && g.answer) out.guests.push(g); });
   }
+  /* THE SCHEDULER ROBOT'S FIELDS ARE ITS OWN TOO. It runs on its own (GitHub, on
+     every new email, answer and save), so a copy held open here goes stale fast.
+     Its working notes always come from the file; staff change them only through
+     an explicit robotEdit (Take Over / Hand Back). While it is running a request,
+     the times on offer, who has been sent what and the booking are its to set —
+     unless a staff member books or cancels, which always wins. */
+  var sr = onFile.robot && typeof onFile.robot === 'object' ? onFile.robot : null;
+  if (sr || out.robotEdit) {
+    var robot = Object.assign({}, sr || out.robot || {}, out.robotEdit || {});
+    delete out.robotEdit;
+    out.robot = robot;
+    if (sr && sr.auto && robot.auto) {
+      var staffClosed = (out.status === 'booked' || out.status === 'cancelled') && out.status !== onFile.status;
+      if (!staffClosed) { out.status = onFile.status; out.chosen = onFile.chosen; out.bookedAt = onFile.bookedAt; }
+      if (Array.isArray(onFile.slots)) out.slots = onFile.slots;
+      if (Array.isArray(onFile.guests) && Array.isArray(out.guests)) {
+        var gf = {}; onFile.guests.forEach(function (g) { if (g && g.id) gf[g.id] = g; });
+        out.guests.forEach(function (g) { var f = g && gf[g.id]; if (f) { if (f.sentAt) g.sentAt = f.sentAt; if (f.reminders) g.reminders = f.reminders; } });
+      }
+    }
+  }
   /* the log is append-only on both sides, so take the union, newest 80 */
   var a = Array.isArray(onFile.log) ? onFile.log : [], b = Array.isArray(out.log) ? out.log : [];
   if (a.length || b.length) {
@@ -805,7 +854,7 @@ function keepGuestAnswers(onFile, mine) {
       if (seen[k]) return; seen[k] = 1; all.push(e);
     });
     all.sort(function (x, y) { return (Number(x.at) || 0) - (Number(y.at) || 0); });
-    out.log = all.slice(-80);
+    out.log = all.slice(-120);
   }
   return out;
 }
@@ -979,6 +1028,12 @@ var HQ_TASK_PREFIX = 'sched-';
 function hqTaskFor(req) {
   var owner = personByEmail(req.owner) || personByName(req.ownerName);
   if (!owner) return null;
+  if (req.robot && req.robot.auto) {
+    var look = needsLook(req);
+    return { id: HQ_TASK_PREFIX + req.id, o: owner.id, t: 'Needs a look: ' + (req.title || 'meeting request'), s: look ? 'Waiting on Someone' : 'Done', due: look ? todayISO(ET) : '',
+      notes: look ? 'The Scheduler stopped because ' + (req.robot.why || 'it needs a person') + '. ' + SITE + '#r=' + req.id : 'The Scheduler is handling this one. ' + SITE + '#r=' + req.id,
+      p: look ? 'High' : 'Normal', d: [], r: '', w: '', rail: 0 };
+  }
   var open = req.status !== 'booked' && req.status !== 'cancelled';
   var waiting = (req.guests || []).filter(function (g) { return g.sentAt && !g.answer; });
   var due = waiting.map(function (g) { return followDue(req, g); }).sort()[0] || '';
@@ -1057,9 +1112,13 @@ function guestState(req, g) {
   if (req.status === 'booked' || req.status === 'cancelled') return 'closed';
   return followDue(req, g) <= todayISO(ET) ? 'due' : 'waiting';
 }
+function isAuto(req) { return !!(req && req.robot && req.robot.auto && req.robot.stage !== 'person'); }
+function needsLook(req) { return !!(req && req.robot && req.robot.auto && req.robot.stage === 'person' && req.status !== 'booked' && req.status !== 'cancelled'); }
 function phase(req) {
   if (req.status === 'cancelled') return 'cancelled';
   if (req.status === 'booked') return 'booked';
+  if (needsLook(req)) return 'look';
+  if (isAuto(req) && (!req.robot.stage || req.robot.stage === 'new')) return 'auto';
   var gs = req.guests || [];
   if (!(req.slots || []).length) return 'draft';
   if (gs.length && !gs.some(function (g) { return g.sentAt || g.answer; })) return 'draft';
@@ -1068,7 +1127,8 @@ function phase(req) {
 }
 var PHASE = {
   draft: { n: 'Getting ready', c: 'p-draft' }, collecting: { n: 'Waiting on replies', c: 'p-collect' },
-  ready: { n: 'Ready to book', c: 'p-ready' }, booked: { n: 'Booked', c: 'p-booked' }, cancelled: { n: 'Cancelled', c: 'p-cancel' }
+  ready: { n: 'Ready to book', c: 'p-ready' }, booked: { n: 'Booked', c: 'p-booked' }, cancelled: { n: 'Cancelled', c: 'p-cancel' },
+  look: { n: 'Needs a Look', c: 'p-due' }, auto: { n: 'Working on It', c: 'p-collect' }
 };
 function phasePill(req) { var p = PHASE[phase(req)]; return '<span class="pill ' + p.c + '">' + p.n + '</span>'; }
 function slotById(req, id) { return (req.slots || []).find(function (s) { return s.id === id; }) || null; }
@@ -1197,7 +1257,7 @@ function sendPoll(req, guests) {
     });
     r.log = (Array.isArray(r.log) ? r.log : []).concat({ at: now, by: m.name, what: 'Poll emailed to ' + list.length + (list.length === 1 ? ' guest' : ' guests') }).slice(-80);
     put(r);
-    toast('Queued for ' + list.length + (list.length === 1 ? ' guest' : ' guests') + '. The Scheduler Emails flow sends it.');
+    toast('Queued for ' + list.length + (list.length === 1 ? ' guest' : ' guests') + '. It goes out from scheduling@mismo.org within a minute or two.');
     render({ full: true });
     return list.length;
   }, function (e) {
@@ -1239,6 +1299,7 @@ function followList(mineOnly) {
   allReqs().forEach(function (r) {
     if (mineOnly && String(r.owner || '').toLowerCase() !== m.email) return;
     if (r.status === 'booked' || r.status === 'cancelled') return;
+    if (isAuto(r)) return;   /* the Scheduler sends its own reminders */
     (r.guests || []).forEach(function (g) {
       var st = guestState(r, g); if (st !== 'due' && st !== 'waiting') return;
       out.push({ r: r, g: g, due: followDue(r, g), st: st });
@@ -1299,6 +1360,18 @@ function viewFollow(app) {
   head.innerHTML = '<div class="grow"><h1>Follow Up</h1><p>People you asked about times and haven’t heard back from. Each one comes due a few business days after you last wrote to them (3 unless you change it on the request).</p></div>';
   head.appendChild(seg([[true, 'Mine'], [false, 'Everyone’s']], STATE.fuMine, function (v) { STATE.fuMine = v; lsSet('fuMine', v); render(); }));
   app.appendChild(head);
+  var looks = allReqs().filter(needsLook);
+  if (looks.length) {
+    var pL0 = el('section', 'panel');
+    pL0.innerHTML = '<div class="panel-h"><h2>Needs a Look</h2><span class="sub">The Scheduler stopped on ' + looks.length + (looks.length === 1 ? ' request' : ' requests') + '</span></div>';
+    var bL0 = el('div', 'panel-b'), lL0 = el('div', 'fu-list'); pL0.appendChild(bL0); bL0.appendChild(lL0);
+    looks.forEach(function (r) {
+      var c = el('div', 'fu');
+      c.innerHTML = '<div class="who"><b>' + esc(r.title || 'Meeting request') + '</b><span>' + esc('Stopped because ' + (r.robot.why || 'it needs a person')) + '</span></div>';
+      var a = el('div', 'acts'); a.appendChild(btn('Open', 'sm', function () { go(null, r.id); })); c.appendChild(a); lL0.appendChild(c);
+    });
+    app.appendChild(pL0);
+  }
   var list = followList(STATE.fuMine), due = list.filter(function (x) { return x.st === 'due'; }), soon = list.filter(function (x) { return x.st === 'waiting'; });
   var p1 = el('section', 'panel');
   p1.innerHTML = '<div class="panel-h"><h2>Follow up now</h2><span class="sub">' + (due.length ? due.length + (due.length === 1 ? ' person' : ' people') : 'nobody') + '</span></div>';
@@ -1367,9 +1440,23 @@ function viewList(app) {
   head.innerHTML = '<div class="grow"><h1>Meeting Requests</h1><p>Every meeting being scheduled, by anyone on the team.</p></div>';
   if (canEdit()) head.appendChild(btn('New Request', 'big', function () { go('new'); }, 'plus'));
   app.appendChild(head);
+  /* the figures first: what's moving, what's waiting, what needs a person */
+  var all0 = allReqs(), weekAgo = Date.now() - 7 * 864e5;
+  var nActive = all0.filter(function (r) { var ph = phase(r); return ph !== 'booked' && ph !== 'cancelled'; }).length;
+  var nPoll = all0.filter(function (r) { return isAuto(r) && r.robot.stage === 'polling' && r.status !== 'booked' && r.status !== 'cancelled'; }).length;
+  var nLook = all0.filter(needsLook).length;
+  var nBooked = all0.filter(function (r) { return r.status === 'booked' && (r.bookedAt || 0) > weekAgo; }).length;
+  var st = el('div', 'stats');
+  [['active', nActive, 'In Progress', ''], ['active', nPoll, 'Polls Out', ''], ['look', nLook, 'Needs a Look', nLook ? 'hot' : ''], ['booked', nBooked, 'Booked This Week', 'good']].forEach(function (x, i) {
+    var b = el('button', 'stat ' + x[3], '<b>' + x[1] + '</b><span>' + esc(x[2]) + '</span>'); b.type = 'button';
+    b.setAttribute('aria-pressed', String(STATE.listShow === x[0] && i !== 1 && !(x[0] === 'active' && i === 1)));
+    b.onclick = function () { STATE.listShow = x[0]; lsSet('listShow', x[0]); render(); };
+    st.appendChild(b);
+  });
+  app.appendChild(st);
   var f = el('div', 'filters');
   f.appendChild(seg([[false, 'Everyone’s'], [true, 'Mine']], STATE.listMine, function (v) { STATE.listMine = v; lsSet('listMine', v); render(); }));
-  f.appendChild(seg([['active', 'In progress'], ['booked', 'Booked'], ['all', 'All']], STATE.listShow, function (v) { STATE.listShow = v; lsSet('listShow', v); render(); }));
+  f.appendChild(seg([['active', 'In Progress'], ['look', 'Needs a Look'], ['booked', 'Booked'], ['all', 'All']], STATE.listShow, function (v) { STATE.listShow = v; lsSet('listShow', v); render(); }));
   app.appendChild(f);
   var m = me().email;
   var list = allReqs().filter(function (r) {
@@ -1377,9 +1464,16 @@ function viewList(app) {
     var ph = phase(r);
     if (STATE.listShow === 'active') return ph !== 'booked' && ph !== 'cancelled';
     if (STATE.listShow === 'booked') return ph === 'booked';
+    if (STATE.listShow === 'look') return ph === 'look';
     return true;
   }).sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); });
-  if (!list.length) { app.appendChild(el('div', 'panel', '<div class="empty">Nothing here yet.' + (canEdit() ? ' Start one with <b>New Request</b>.' : '') + '</div>')); return; }
+  if (!list.length) {
+    /* no empty well: say what happens next instead */
+    var none = { look: 'Nothing needs a look right now.', booked: 'Nothing booked yet.', all: 'No requests yet.', active: 'Nothing in progress right now.' }[STATE.listShow] || '';
+    app.appendChild(el('p', 'muted', esc(none) + ' When an email reaches scheduling@mismo.org, the Scheduler takes it from there:'));
+    app.appendChild(howItRuns());
+    return;
+  }
   var g = el('div', 'reqs');
   list.forEach(function (r) {
     var c = el('button', 'req'); c.type = 'button';
@@ -1387,7 +1481,7 @@ function viewList(app) {
     var due = (gs.filter(function (x) { return guestState(r, x) === 'due'; })).length;
     var who = (r.internal || []).map(function (id) { var p = person(id); return p ? first(p.name) : id; }).concat(gs.map(function (x) { return x.name || x.email; }));
     var chosen = r.status === 'booked' && slotById(r, r.chosen);
-    c.innerHTML = '<div class="line">' + phasePill(r) + (due ? '<span class="pill p-due">Follow up</span>' : '') + '<span class="muted" style="margin-left:auto">' + esc(first(r.ownerName)) + '</span></div>' +
+    c.innerHTML = '<div class="line">' + phasePill(r) + (due ? '<span class="pill p-due">Follow up</span>' : '') + (r.robot && r.robot.auto ? '<span class="auto-tag">Automatic</span>' : '') + '<span class="muted" style="margin-left:auto">' + esc(first(r.ownerName)) + '</span></div>' +
       '<h3>' + esc(r.title || 'Untitled meeting') + '</h3>' +
       '<div class="line">' + esc(who.join(', ') || 'No one added yet') + '</div>' +
       (chosen ? '<div class="line"><b style="color:var(--ink)">' + esc(slotLabel(chosen, VIEW_TZ, true)) + '</b></div>'
@@ -1397,6 +1491,16 @@ function viewList(app) {
     g.appendChild(c);
   });
   app.appendChild(g);
+}
+
+function howItRuns() {
+  var f = el('div', 'flow');
+  [['We Hear Back Right Away', 'The person who asked gets a branded email saying we have their request and are working on it.'],
+   ['Their Times Come First', 'If everyone from MISMO is free at a time they suggested, it’s booked and everyone gets a confirmation.'],
+   ['Otherwise a Poll', 'Guests get their own link to the times everyone at MISMO is free, with the person who asked copied.'],
+   ['The Poll Keeps Itself Current', 'Times come off when Outlook changes or a guest says no, new ones are added, and it books itself when a time works for everyone.']
+  ].forEach(function (x, i) { f.appendChild(el('div', null, '<span class="step">' + (i + 1) + '</span><h3>' + esc(x[0]) + '</h3><p>' + esc(x[1]) + '</p>')); });
+  return f;
 }
 
 /* ---------------- New request (and editing one) ---------------- */
@@ -1600,6 +1704,7 @@ function viewDetail(app, req) {
     bk.appendChild(ba); app.appendChild(bk);
   }
   if (req.status === 'cancelled') app.appendChild(el('div', 'notice warn', '<b>This request was cancelled.</b> ' + (canEdit() ? '<button class="linkbtn" type="button" id="reopen">Bring it back</button>' : '')));
+  if (req.robot) app.appendChild(robotPanel(req, editable));
   if ($('#reopen')) $('#reopen').onclick = function () { var r = clone(req); r.status = ''; put(r, 'Brought back'); };
 
   /* times + who can make it */
@@ -1607,7 +1712,7 @@ function viewDetail(app, req) {
   var future = (req.slots || []).filter(function (s) { return s.e > Date.now(); });
   pT.innerHTML = '<div class="panel-h"><span class="step">1</span><h2>Times you’re offering</h2><span class="sub">' + (req.slots || []).length + ' offered' + ((req.slots || []).length !== future.length ? ', ' + ((req.slots || []).length - future.length) + ' already passed' : '') + '</span></div>';
   var pa = el('div', 'acts'); $('.panel-h', pT).appendChild(pa);
-  if (editable && req.status !== 'booked') pa.appendChild(btn((req.slots || []).length ? 'Change the times' : 'Pick times', (req.slots || []).length ? 'ghost sm' : 'sm', function () { openPicker(req); }, 'cal'));
+  if (editable && req.status !== 'booked' && !isAuto(req)) pa.appendChild(btn((req.slots || []).length ? 'Change the times' : 'Pick times', (req.slots || []).length ? 'ghost sm' : 'sm', function () { openPicker(req); }, 'cal'));
   var pb = el('div', 'panel-b'); pT.appendChild(pb);
   if (!(req.slots || []).length) pb.appendChild(el('div', 'empty', 'No times yet. ' + (editable ? 'Use <b>Pick times</b> — it shows when everyone from MISMO is free in Outlook.' : '')));
   else pb.appendChild(gridFor(req, editable));
@@ -1618,8 +1723,8 @@ function viewDetail(app, req) {
   pG.innerHTML = '<div class="panel-h"><span class="step">2</span><h2>Outside guests</h2><span class="sub">' + (LINKS.live ? 'Each gets a private link to mark the times that work' : 'Enter their answers when they reply') + '</span></div>';
   var ga = el('div', 'acts'); $('.panel-h', pG).appendChild(ga);
   var unsent = (req.guests || []).filter(function (g) { return !g.sentAt && !g.answer; });
-  if (editable && unsent.length && (req.slots || []).length && req.status !== 'booked') ga.appendChild(btn('Send the Poll', 'sm', function () { sendPoll(req, unsent); }));
-    if (editable && unsent.length && (req.slots || []).length && req.status !== 'booked') ga.appendChild(btn('Draft the invitation email', 'ghost sm', function () { openDraft(req, 'ask', unsent.map(function (g) { return g.id; })); }, 'spark'));
+  if (editable && unsent.length && (req.slots || []).length && req.status !== 'booked' && !isAuto(req)) ga.appendChild(btn('Send the Poll', 'sm', function () { sendPoll(req, unsent); }));
+    if (editable && unsent.length && (req.slots || []).length && req.status !== 'booked' && !isAuto(req)) ga.appendChild(btn('Draft the invitation email', 'ghost sm', function () { openDraft(req, 'ask', unsent.map(function (g) { return g.id; })); }, 'spark'));
   var gb = el('div', 'panel-b'); pG.appendChild(gb);
   if (LINKS.live === false && (req.guests || []).length) gb.appendChild(el('div', 'notice warn', '<b>Self-serve links aren’t switched on yet.</b> Until Perry turns them on (see the README), your emails ask guests to reply with the times that work, and you click <b>Enter their answer</b> when they do.'));
   if (!(req.guests || []).length) gb.appendChild(el('div', 'empty', 'Only MISMO people on this one. ' + (editable ? '<button class="linkbtn" type="button" id="addg">Add someone from outside</button>' : '')));
@@ -1629,13 +1734,16 @@ function viewDetail(app, req) {
     var tb = el('tbody'); t.appendChild(tb);
     (req.guests || []).forEach(function (g) {
       var st = guestState(req, g), tr = el('tr');
-      var stTxt = st === 'answered' ? '<span class="pill p-yes">Answered ' + esc(fmtDay(g.answer.at || Date.now(), VIEW_TZ)) + (g.answer.via === 'manual' ? ' (entered by hand)' : '') + '</span>' + (g.answer.note ? '<div class="small muted" style="margin-top:4px">“' + esc(g.answer.note) + '”</div>' : '')
+      var auto = isAuto(req), nRem = (g.reminders || []).length;
+      var stTxt = auto && (st === 'waiting' || st === 'due') ? '<span class="pill p-wait">Poll sent ' + esc(fmtDay(g.sentAt, VIEW_TZ)) + (nRem ? ' · reminded ' + nRem + (nRem === 1 ? ' time' : ' times') : '') + '</span>'
+        : auto && st === 'unsent' ? '<span class="pill p-draft">Poll going out</span>'
+        : st === 'answered' ? '<span class="pill p-yes">Answered ' + esc(fmtDay(g.answer.at || Date.now(), VIEW_TZ)) + (g.answer.via === 'manual' ? ' (entered by hand)' : '') + '</span>' + (g.answer.note ? '<div class="small muted" style="margin-top:4px">“' + esc(g.answer.note) + '”</div>' : '')
         : st === 'unsent' ? '<span class="pill p-draft">Not asked yet</span>'
         : st === 'due' ? '<span class="pill p-due">No reply — follow up ' + esc(dayWord(followDue(req, g))) + '</span>'
         : st === 'closed' ? '<span class="pill p-draft">No reply</span>'
         : '<span class="pill p-wait">Asked ' + esc(fmtDay(g.sentAt, VIEW_TZ)) + ' · follow up ' + esc(dayWord(followDue(req, g))) + '</span>';
       tr.innerHTML = '<td><b>' + esc(g.name || '(no name)') + '</b><div class="small muted">' + esc(g.email) + (g.org ? ' · ' + esc(g.org) : '') + '</div></td><td>' + stTxt + '</td>';
-      if ((st === 'waiting' || st === 'due') && editable) {
+      if ((st === 'waiting' || st === 'due') && editable && !auto) {
         var cd = el('button', 'linkbtn small', 'Wrong date? Change it'); cd.type = 'button'; cd.style.display = 'block'; cd.style.marginTop = '4px';
         cd.onclick = function () { changeSentDate(req, g); };
         tr.children[1].appendChild(cd);
@@ -1643,7 +1751,7 @@ function viewDetail(app, req) {
       var td = el('td'), a = el('div', 'acts'); td.appendChild(a); tr.appendChild(td);
       if (LINKS.live) a.appendChild(btn('Copy their link', 'ghost sm', function () { copy(guestLink(req, g)).then(function () { toast('Copied ' + first(g.name) + '’s private link. It only works for them.'); }); }, 'link'));
       if (editable && req.status !== 'booked') {
-        if (st === 'unsent') a.appendChild(btn('I sent it', 'ghost sm', function () {
+        if (st === 'unsent' && !auto) a.appendChild(btn('I sent it', 'ghost sm', function () {
           askDate({ title: 'When did you send it to ' + first(g.name) + '?', days: req.followDays, ok: 'Mark as sent' }).then(function (when) {
             if (!when) return;
             var r = clone(getReq(req.id)); r.guests.forEach(function (x) { if (x.id === g.id) x.sentAt = when; });
@@ -1651,7 +1759,7 @@ function viewDetail(app, req) {
             toast('If ' + first(g.name) + ' doesn\u2019t answer, you\u2019ll be reminded on ' + dayWord(addBiz(when, r.followDays || DEFAULT_FOLLOW_DAYS)) + '.');
           });
         }, 'check'));
-        if (st === 'due' || st === 'waiting') a.appendChild(btn('Follow up', 'ghost sm', function () { openDraft(req, 'follow', [g.id]); }, 'spark'));
+        if ((st === 'due' || st === 'waiting') && !auto) a.appendChild(btn('Follow up', 'ghost sm', function () { openDraft(req, 'follow', [g.id]); }, 'spark'));
         a.appendChild(btn(st === 'answered' ? 'Change answer' : 'Enter their answer', 'ghost sm', function () { openAnswer(req, g); }, 'pen'));
       }
       tb.appendChild(tr);
@@ -1674,6 +1782,61 @@ function viewDetail(app, req) {
     cx.style.marginTop = '14px'; lb.appendChild(cx);
   }
   app.appendChild(pL);
+}
+
+/* ---------------- what the Scheduler did on its own ---------------- */
+var SENT = { docs: null, at: 0 };
+function loadSent() {
+  if (PREVIEW) { SENT.docs = previewSent(); return Promise.resolve(); }
+  if (SENT.docs && Date.now() - SENT.at < 60000) return Promise.resolve();
+  return readData(PROJECT, 'outbox-sent').then(function (b) { SENT.docs = ((b && (b.data || b.content)) || {}).docs || {}; SENT.at = Date.now(); }, function () { SENT.docs = SENT.docs || {}; SENT.at = Date.now(); });
+}
+function robotPanel(req, editable) {
+  var R = req.robot || {}, look = needsLook(req), on = isAuto(req);
+  var p = el('section', 'panel');
+  var sub = look ? 'Stopped — needs a person' : !R.auto ? 'Handed over to staff' : req.status === 'booked' ? 'Booked it' : R.stage === 'polling' ? 'Poll out, set ' + (R.round || 1) + ' of times' : 'Working on it';
+  p.innerHTML = '<div class="panel-h"><h2>Scheduled Automatically</h2><span class="sub">' + esc(sub) + '</span></div>';
+  var acts = el('div', 'acts'); $('.panel-h', p).appendChild(acts);
+  var b = el('div', 'panel-b'); p.appendChild(b);
+  if (look) b.appendChild(el('div', 'notice bad', '<b>The Scheduler stopped because ' + esc(R.why || 'it needs a person') + '.</b> Fix what’s needed (for example <b>Edit details</b> to add who should attend), then hand it back, or take it from here yourself.'));
+  if (R.replyAt) b.appendChild(el('div', 'notice', '<b>' + esc(R.replyFrom || 'Someone') + ' replied by email ' + esc(whenAgo(R.replyAt)) + ':</b> “' + esc(R.replySnippet || '') + '”'));
+  var rq = R.requester || {};
+  var offered = (R.offered || []).map(function (w) { return fmtDay(w.s, VIEW_TZ) + ' ' + fmtTime(w.s, VIEW_TZ) + '–' + fmtTime(w.e, VIEW_TZ); });
+  var live = (req.slots || []).filter(function (x) { return x.s > Date.now(); }).length;
+  var f = el('div', 'robotfacts');
+  f.innerHTML = '<div><small>Asked By</small><b>' + esc(rq.name || rq.email || '—') + '</b>' + (rq.name && rq.email ? '<span class="small muted">' + esc(rq.email) + '</span>' : '') + '</div>' +
+    '<div><small>Times They Suggested</small><b>' + (offered.length ? esc(offered.slice(0, 3).join('; ')) + (offered.length > 3 ? ' +' + (offered.length - 3) : '') : 'None') + '</b></div>' +
+    '<div><small>Times on Offer Now</small><b>' + (req.status === 'booked' ? 'Booked' : live) + '</b>' + ((R.dropped || []).length ? '<span class="small muted">' + R.dropped.length + ' taken off</span>' : '') + '</div>' +
+    '<div><small>Read By</small><b>' + (R.readBy === 'claude' ? 'Claude' : R.readBy === 'checked' ? 'Checked by staff' : 'Plain reader') + '</b></div>';
+  b.appendChild(f);
+  if ((R.dropped || []).length) {
+    b.appendChild(el('div', 'small muted', 'Times taken off the poll, newest first'));
+    var ul = el('ul', 'log'); R.dropped.slice().reverse().slice(0, 6).forEach(function (d) { ul.appendChild(el('li', null, '<span>' + esc(slotLabel(d, VIEW_TZ)) + '</span><span>' + esc(d.why) + '</span>')); });
+    b.appendChild(ul);
+  }
+  var mails = el('div'); mails.innerHTML = '<div class="small muted" style="margin:12px 0 6px">Emails the Scheduler sent</div><div class="small muted">Loading…</div>';
+  b.appendChild(mails);
+  loadSent().then(function () {
+    var list = Object.keys(SENT.docs || {}).map(function (k) { return Object.assign({ id: k }, SENT.docs[k]); }).filter(function (m) { return m.reqId === req.id && !m.sending; })
+      .sort(function (x, y) { return (y.at || 0) - (x.at || 0); });
+    var waiting = (R.pending || []).length;
+    var body = list.map(function (m) {
+      return '<tr><td>' + esc(fmtDay(m.at, VIEW_TZ) + ' ' + fmtTime(m.at, VIEW_TZ)) + '</td><td>' + esc(m.subject || '') + '</td><td>' + esc((m.to || []).join(', ')) + ((m.cc || []).length ? '<div class="small muted">copy: ' + esc(m.cc.join(', ')) + '</div>' : '') + '</td><td>' +
+        (m.ok ? '<span class="pill p-yes">Sent</span>' : '<span class="pill p-due">Not sent' + ((m.tries || 0) >= 5 ? ', gave up' : ', will retry') + '</span>') + '</td></tr>';
+    }).join('');
+    mails.innerHTML = '<div class="small muted" style="margin:12px 0 6px">Emails the Scheduler sent' + (waiting ? ' · ' + waiting + ' waiting to go' : '') + '</div>' +
+      (body ? '<div style="overflow-x:auto"><table class="mails"><thead><tr><th>When</th><th>Email</th><th>To</th><th>Status</th></tr></thead><tbody>' + body + '</tbody></table></div>' : '<div class="small muted">None yet.</div>');
+  });
+  if (editable && req.status !== 'booked') {
+    if (on) acts.appendChild(btn('Take Over', 'ghost sm', function () {
+      if (!confirm('Take this one over? The Scheduler stops emailing about it, and you pick times, send polls and follow up yourself.')) return;
+      var r = clone(req); r.robotEdit = { auto: false }; put(r, 'Took over from the Scheduler'); }));
+    else acts.appendChild(btn(look ? 'Hand Back to the Scheduler' : 'Let the Scheduler Handle It', 'sm', function () {
+      var r = clone(req), sent = (r.guests || []).some(function (g) { return g.sentAt; });
+      r.robotEdit = { auto: true, stage: (r.slots || []).length && sent ? 'polling' : 'new', why: '', round: 1, stalled: 0, readBy: R.readBy === 'claude' ? 'claude' : 'checked', requester: R.requester || { name: r.askedBy || '', email: r.askedByEmail || '' } };
+      put(r, look ? 'Handed back to the Scheduler' : 'Handed to the Scheduler'); toast('The Scheduler will pick it up within a few minutes.'); }));
+  }
+  return p;
 }
 
 function replySourceFor(req) {
@@ -1918,6 +2081,7 @@ function inboxCard(x) {
   var more = el('button', 'linkbtn small', 'Show the whole email'); more.type = 'button'; more.style.marginTop = '6px';
   var pre = el('pre', 'src'); pre.hidden = true; pre.style.marginTop = '8px'; pre.textContent = emailText(x);
   more.onclick = function () { pre.hidden = !pre.hidden; more.textContent = pre.hidden ? 'Show the whole email' : 'Hide the email'; };
+  if (x.robotNote) who.appendChild(el('div', 'small', '<span class="auto-tag" style="margin:6px 6px 0 0">Scheduler</span>' + esc(x.robotNote)));
   who.appendChild(more); who.appendChild(pre);
   c.appendChild(who);
   var a = el('div', 'acts'); a.style.flexDirection = 'column'; a.style.alignItems = 'stretch';
@@ -2415,7 +2579,9 @@ function downloadIcs(req, sl) {
 function viewHelp(app) {
   var p = el('section', 'panel'), b = el('div', 'panel-b help'); p.appendChild(b);
   b.innerHTML =
-    '<h2>The idea</h2><p>The Scheduler finds a meeting time that works for people inside and outside MISMO, writes the emails for you, and reminds you to follow up with anyone who hasn\u2019t answered.</p>' +
+    '<h2>The idea</h2><p>The Scheduler finds a meeting time that works for people inside and outside MISMO. Requests emailed to scheduling@mismo.org run on their own:</p>' +
+    '<div id="help-flow"></div>' +
+    '<p>It stops and emails Vanessa (<b>Needs a Look</b>) when the email doesn\u2019t say who from MISMO should attend, when three sets of times haven\u2019t worked, when a guest hasn\u2019t answered after two reminders, or when anything else needs a person. Press <b>Take Over</b> on any request to run it by hand instead. The steps below are for requests run by hand.</p>' +
     '<h2>Step by step</h2><ol>' +
     '<li><b>Incoming.</b> Meeting requests emailed to scheduling@mismo.org show up here by themselves (once the email watcher is switched on). To have ones sent to you show up too, set an Outlook rule that redirects them to scheduling@mismo.org. Press <b>Start a request</b> and Claude reads the email for you, or <b>Draft a reply</b> to answer the person who asked.</li>' +
     '<li><b>New Request.</b> Paste the email that asked for the meeting and press <b>Read it for me</b> \u2014 it fills in the name, who\u2019s coming from MISMO and who\u2019s coming from outside. Check it and save.</li>' +
@@ -2428,9 +2594,10 @@ function viewHelp(app) {
     '<li>Everyone with access sees every request, so the team can cover for each other. Use <b>Mine</b> to see just yours.</li>' +
     '<li>Outlook availability comes from the same place as Team HQ\u2019s \u201cWho is doing what.\u201d Anyone whose Outlook isn\u2019t connected shows as \u201cDon\u2019t know\u201d \u2014 click their squares in the grid to fill them in.</li>' +
     '<li>Times show in the time zone you pick; emails list times in Eastern unless you choose another.</li>' +
-    '<li>The Scheduler never sends an email by itself. You always read and send it from Outlook.</li>' +
+    '<li>Requests that arrive by email are run by the Scheduler itself and marked <b>Automatic</b>; it sends its emails from scheduling@mismo.org in the MISMO frame. Requests you start by hand stay yours unless you press <b>Let the Scheduler Handle It</b>.</li>' +
     '<li>Access (Edit or View) is given in the admin panel\u2019s People &amp; Access, like every other tool. Ask Perry.</li></ul>';
   app.appendChild(p);
+  var hf = $('#help-flow', p); if (hf) hf.appendChild(howItRuns());
 }
 
 /* ======================================================================
@@ -2461,10 +2628,33 @@ function previewRequests() {
     slots: [['2026-11-06', '10:00'], ['2026-11-09', '14:00'], ['2026-11-10', '11:00']].map(function (x, i) { var s = etAt(x[0], x[1]); return { id: 'e' + i, s: s, e: s + 45 * M }; }),
     guests: [{ id: 'g4', code: 'preview-pat', name: 'Pat Example', email: 'pat@example.com', org: 'Example Lending', sentAt: etAt('2026-10-22', '10:00') }],
     log: [{ at: etAt('2026-10-22', '10:00'), by: 'Vanessa Rios', what: 'Asked Pat Example' }], updatedAt: etAt('2026-10-22', '10:00') };
-  return [vq, sd, ex];
+  var now = Date.now(), d1 = bizDaysAhead(3);
+  var au = { id: 'au8k2m4p6q', title: 'Sample: Membership Info, Example Lending (made up)', purpose: 'A made-up request the Scheduler is running on its own.', duration: 30, where: 'Zoom', followDays: 2,
+    owner: 'vrios@mismo.org', ownerName: 'Vanessa Rios', askedBy: 'Sam Rivera', askedByEmail: 'sam.rivera@example.com', createdAt: now - 26 * 36e5, createdBy: 'Scheduler', internal: ['kelly'],
+    slots: [[d1[0], '10:00'], [d1[0], '14:00'], [d1[1], '10:30'], [d1[2], '13:30']].map(function (x, i) { var s = etAt(x[0], x[1]); return { id: 'a' + i, s: s, e: s + 30 * M, added: now - 26 * 36e5 }; }),
+    guests: [{ id: 'g5', code: 'preview-sam', name: 'Sam Rivera', email: 'sam.rivera@example.com', org: 'Example Lending', sentAt: now - 26 * 36e5, reminders: [now - 2 * 36e5] }],
+    robot: { auto: true, stage: 'polling', round: 1, readBy: 'claude', requester: { name: 'Sam Rivera', email: 'sam.rivera@example.com' },
+      offered: [{ s: etAt(d1[0], '09:00'), e: etAt(d1[0], '09:30') }], dropped: [{ id: 'a9', s: etAt(d1[1], '15:00'), e: etAt(d1[1], '15:30'), why: 'someone at MISMO is now busy' }] },
+    log: [{ at: now - 26 * 36e5, by: 'Scheduler', what: 'Started from an email to scheduling@mismo.org (read by Claude); 1 suggested time' }, { at: now - 26 * 36e5, by: 'Scheduler', what: 'None of the times they offered work for everyone at MISMO; poll sent to Sam Rivera with 5 times' }],
+    updatedAt: now - 2 * 36e5 };
+  var lk = { id: 'lk3n5p7r9s', title: 'Sample: Intro Call (made up)', purpose: 'A made-up request the Scheduler handed to a person.', duration: 30, where: 'Zoom', followDays: 2,
+    owner: 'vrios@mismo.org', ownerName: 'Vanessa Rios', askedBy: 'Alex Kim', askedByEmail: 'alex.kim@example.com', createdAt: now - 3 * 36e5, createdBy: 'Scheduler', internal: [], slots: [],
+    guests: [{ id: 'g6', code: 'preview-alex', name: 'Alex Kim', email: 'alex.kim@example.com', org: 'Example Bank' }],
+    robot: { auto: true, stage: 'person', why: 'the email doesn’t say who from MISMO should be in the meeting', readBy: 'claude', acked: now - 3 * 36e5, requester: { name: 'Alex Kim', email: 'alex.kim@example.com' }, offered: [] },
+    log: [{ at: now - 3 * 36e5, by: 'Scheduler', what: 'Handed to a person: the email doesn’t say who from MISMO should be in the meeting' }], updatedAt: now - 3 * 36e5 };
+  return [au, lk, vq, sd, ex];
+}
+function previewSent() {
+  var now = Date.now();
+  return {
+    'ack-au8k2m4p6q': { at: now - 26 * 36e5, ok: true, to: ['sam.rivera@example.com'], cc: [], subject: 'We’re Working on Your Meeting Request: Sample: Membership Info, Example Lending (made up)', reqId: 'au8k2m4p6q' },
+    'poll-au8k2m4p6q-g5-r1': { at: now - 26 * 36e5, ok: true, to: ['sam.rivera@example.com'], cc: [], subject: 'Finding a Time for Sample: Membership Info, Example Lending (made up)', reqId: 'au8k2m4p6q' },
+    'remind-au8k2m4p6q-g5-1': { at: now - 2 * 36e5, ok: true, to: ['sam.rivera@example.com'], cc: [], subject: 'Reminder: Finding a Time for Sample: Membership Info, Example Lending (made up)', reqId: 'au8k2m4p6q' },
+    'ack-lk3n5p7r9s': { at: now - 3 * 36e5, ok: true, to: ['alex.kim@example.com'], cc: [], subject: 'We’re Working on Your Meeting Request: Sample: Intro Call (made up)', reqId: 'lk3n5p7r9s' }
+  };
 }
 function previewInbox() {
-  var vq = previewRequests()[0];
+  var vq = previewRequests().filter(function (r) { return r.id === 'vq7m2k9p4a'; })[0];
   return [
     { id: 'mkelly0001', mailbox: 'scheduling@mismo.org', from: 'kbradshaw@mismo.org', fromName: 'Bradshaw, Kelly', to: 'Critchley, Jonna; Rios, Vanessa', cc: 'Moses, Amy',
       subject: 'Sample (made up): FW: Example Title Co - MISMO membership intro', receivedAt: etAt('2026-10-27', '09:38'), body: vq.source.split('\n\n').slice(1).join('\n\n'), status: 'started', reqId: vq.id, by: 'Vanessa Rios' },
