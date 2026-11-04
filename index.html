@@ -1029,9 +1029,10 @@ function hqTaskFor(req) {
   var owner = personByEmail(req.owner) || personByName(req.ownerName);
   if (!owner) return null;
   if (req.robot && req.robot.auto) {
-    var look = needsLook(req);
-    return { id: HQ_TASK_PREFIX + req.id, o: owner.id, t: 'Needs a look: ' + (req.title || 'meeting request'), s: look ? 'Waiting on Someone' : 'Done', due: look ? todayISO(ET) : '',
-      notes: look ? 'The Scheduler stopped because ' + (req.robot.why || 'it needs a person') + '. ' + SITE + '#r=' + req.id : 'The Scheduler is handling this one. ' + SITE + '#r=' + req.id,
+    var look = needsYou(req), apr = awaitingApproval(req);
+    return { id: HQ_TASK_PREFIX + req.id, o: owner.id, t: (apr ? 'Approve a time: ' : 'Needs a look: ') + (req.title || 'meeting request'), s: look ? 'Waiting on Someone' : 'Done', due: look ? todayISO(ET) : '',
+      notes: apr ? 'The Scheduler is holding ' + slotLabel(req.robot.proposed, ET, true) + ' until Vanessa or Jonna approves it. ' + SITE + '#r=' + req.id
+        : look ? 'The Scheduler stopped because ' + (req.robot.why || 'it needs a person') + '. ' + SITE + '#r=' + req.id : 'The Scheduler is handling this one. ' + SITE + '#r=' + req.id,
       p: look ? 'High' : 'Normal', d: [], r: '', w: '', rail: 0 };
   }
   var open = req.status !== 'booked' && req.status !== 'cancelled';
@@ -1114,10 +1115,24 @@ function guestState(req, g) {
 }
 function isAuto(req) { return !!(req && req.robot && req.robot.auto && req.robot.stage !== 'person'); }
 function needsLook(req) { return !!(req && req.robot && req.robot.auto && req.robot.stage === 'person' && req.status !== 'booked' && req.status !== 'cancelled'); }
+function awaitingApproval(req) { return !!(req && req.robot && req.robot.auto && req.robot.stage === 'approve' && req.robot.proposed && !req.robot.approved && req.status !== 'booked' && req.status !== 'cancelled'); }
+function needsYou(req) { return needsLook(req) || awaitingApproval(req); }
+/* Vanessa or Jonna approve a time before anyone outside MISMO is told it's booked */
+var APPROVERS = ['vrios', 'jcritchley'];
+function canApprove() { return PREVIEW || (canEdit() && APPROVERS.indexOf(avKey(me().email)) >= 0); }
+function approveSlot(req, sl) {
+  if (!canApprove()) { toast('Only Vanessa or Jonna can approve a time.'); return; }
+  var r = clone(req); r.robotEdit = { approved: { id: sl.id, by: me().name, at: Date.now() } };
+  if (!(r.slots || []).some(function (x) { return x.id === sl.id; })) r.slots = (r.slots || []).concat({ id: sl.id, s: sl.s, e: sl.e, added: Date.now() });
+  put(r, 'Approved ' + slotLabel(sl, ET, true));
+  toast('Approved. The confirmation goes out from scheduling@mismo.org within a few minutes.');
+}
 function phase(req) {
   if (req.status === 'cancelled') return 'cancelled';
   if (req.status === 'booked') return 'booked';
   if (needsLook(req)) return 'look';
+  if (awaitingApproval(req)) return 'approve';
+  if (req.robot && req.robot.auto && req.robot.stage === 'approve') return 'auto';
   if (isAuto(req) && (!req.robot.stage || req.robot.stage === 'new')) return 'auto';
   var gs = req.guests || [];
   if (!(req.slots || []).length) return 'draft';
@@ -1128,7 +1143,7 @@ function phase(req) {
 var PHASE = {
   draft: { n: 'Getting ready', c: 'p-draft' }, collecting: { n: 'Waiting on replies', c: 'p-collect' },
   ready: { n: 'Ready to book', c: 'p-ready' }, booked: { n: 'Booked', c: 'p-booked' }, cancelled: { n: 'Cancelled', c: 'p-cancel' },
-  look: { n: 'Needs a Look', c: 'p-due' }, auto: { n: 'Working on It', c: 'p-collect' }
+  look: { n: 'Needs a Look', c: 'p-due' }, auto: { n: 'Working on It', c: 'p-collect' }, approve: { n: 'Waiting for Approval', c: 'p-ready' }
 };
 function phasePill(req) { var p = PHASE[phase(req)]; return '<span class="pill ' + p.c + '">' + p.n + '</span>'; }
 function slotById(req, id) { return (req.slots || []).find(function (s) { return s.id === id; }) || null; }
@@ -1360,15 +1375,18 @@ function viewFollow(app) {
   head.innerHTML = '<div class="grow"><h1>Follow Up</h1><p>People you asked about times and haven’t heard back from. Each one comes due a few business days after you last wrote to them (3 unless you change it on the request).</p></div>';
   head.appendChild(seg([[true, 'Mine'], [false, 'Everyone’s']], STATE.fuMine, function (v) { STATE.fuMine = v; lsSet('fuMine', v); render(); }));
   app.appendChild(head);
-  var looks = allReqs().filter(needsLook);
+  var looks = allReqs().filter(needsYou);
   if (looks.length) {
     var pL0 = el('section', 'panel');
-    pL0.innerHTML = '<div class="panel-h"><h2>Needs a Look</h2><span class="sub">The Scheduler stopped on ' + looks.length + (looks.length === 1 ? ' request' : ' requests') + '</span></div>';
+    pL0.innerHTML = '<div class="panel-h"><h2>Needs a Look</h2><span class="sub">' + looks.length + (looks.length === 1 ? ' request is' : ' requests are') + ' waiting on you</span></div>';
     var bL0 = el('div', 'panel-b'), lL0 = el('div', 'fu-list'); pL0.appendChild(bL0); bL0.appendChild(lL0);
     looks.forEach(function (r) {
       var c = el('div', 'fu');
-      c.innerHTML = '<div class="who"><b>' + esc(r.title || 'Meeting request') + '</b><span>' + esc('Stopped because ' + (r.robot.why || 'it needs a person')) + '</span></div>';
-      var a = el('div', 'acts'); a.appendChild(btn('Open', 'sm', function () { go(null, r.id); })); c.appendChild(a); lL0.appendChild(c);
+      var ap = awaitingApproval(r);
+      c.innerHTML = '<div class="who"><b>' + esc(r.title || 'Meeting request') + '</b><span>' + esc(ap ? 'Approve ' + slotLabel(r.robot.proposed, VIEW_TZ, true) + ' (' + (r.robot.proposed.how || '') + ')' : 'Stopped because ' + (r.robot.why || 'it needs a person')) + '</span></div>';
+      var a = el('div', 'acts');
+      if (ap && canApprove()) a.appendChild(btn('Approve', 'sm', function () { approveSlot(r, r.robot.proposed); }, 'check'));
+      a.appendChild(btn('Open', ap ? 'sm ghost' : 'sm', function () { go(null, r.id); })); c.appendChild(a); lL0.appendChild(c);
     });
     app.appendChild(pL0);
   }
@@ -1444,7 +1462,7 @@ function viewList(app) {
   var all0 = allReqs(), weekAgo = Date.now() - 7 * 864e5;
   var nActive = all0.filter(function (r) { var ph = phase(r); return ph !== 'booked' && ph !== 'cancelled'; }).length;
   var nPoll = all0.filter(function (r) { return isAuto(r) && r.robot.stage === 'polling' && r.status !== 'booked' && r.status !== 'cancelled'; }).length;
-  var nLook = all0.filter(needsLook).length;
+  var nLook = all0.filter(needsYou).length;
   var nBooked = all0.filter(function (r) { return r.status === 'booked' && (r.bookedAt || 0) > weekAgo; }).length;
   var st = el('div', 'stats');
   [['active', nActive, 'In Progress', ''], ['active', nPoll, 'Polls Out', ''], ['look', nLook, 'Needs a Look', nLook ? 'hot' : ''], ['booked', nBooked, 'Booked This Week', 'good']].forEach(function (x, i) {
@@ -1464,7 +1482,7 @@ function viewList(app) {
     var ph = phase(r);
     if (STATE.listShow === 'active') return ph !== 'booked' && ph !== 'cancelled';
     if (STATE.listShow === 'booked') return ph === 'booked';
-    if (STATE.listShow === 'look') return ph === 'look';
+    if (STATE.listShow === 'look') return ph === 'look' || ph === 'approve';
     return true;
   }).sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); });
   if (!list.length) {
@@ -1496,9 +1514,9 @@ function viewList(app) {
 function howItRuns() {
   var f = el('div', 'flow');
   [['We Hear Back Right Away', 'The person who asked gets a branded email saying we have their request and are working on it.'],
-   ['Their Times Come First', 'If everyone from MISMO is free at a time they suggested, it’s booked and everyone gets a confirmation.'],
+   ['Their Times Come First', 'If everyone from MISMO is free at a time they suggested, it’s held and Vanessa or Jonna approves it before anyone is told.'],
    ['Otherwise a Poll', 'Guests get their own link to the times everyone at MISMO is free, with the person who asked copied.'],
-   ['The Poll Keeps Itself Current', 'Times come off when Outlook changes or a guest says no, new ones are added, and it books itself when a time works for everyone.']
+   ['The Poll Keeps Itself Current', 'Times come off when Outlook changes or a guest says no, new ones are added, and a time that works for everyone goes to Vanessa or Jonna to approve.']
   ].forEach(function (x, i) { f.appendChild(el('div', null, '<span class="step">' + (i + 1) + '</span><h3>' + esc(x[0]) + '</h3><p>' + esc(x[1]) + '</p>')); });
   return f;
 }
@@ -1794,10 +1812,20 @@ function loadSent() {
 function robotPanel(req, editable) {
   var R = req.robot || {}, look = needsLook(req), on = isAuto(req);
   var p = el('section', 'panel');
-  var sub = look ? 'Stopped — needs a person' : !R.auto ? 'Handed over to staff' : req.status === 'booked' ? 'Booked it' : R.stage === 'polling' ? 'Poll out, set ' + (R.round || 1) + ' of times' : 'Working on it';
+  var sub = look ? 'Stopped — needs a person' : awaitingApproval(req) ? 'Found a time — waiting for approval' : !R.auto ? 'Handed over to staff' : req.status === 'booked' ? 'Booked it' : R.stage === 'polling' ? 'Poll out, set ' + (R.round || 1) + ' of times' : 'Working on it';
   p.innerHTML = '<div class="panel-h"><h2>Scheduled Automatically</h2><span class="sub">' + esc(sub) + '</span></div>';
   var acts = el('div', 'acts'); $('.panel-h', p).appendChild(acts);
   var b = el('div', 'panel-b'); p.appendChild(b);
+  if (awaitingApproval(req)) {
+    var P = R.proposed, apb = el('div', 'booked');
+    apb.innerHTML = '<div style="flex:1 1 280px"><div class="small muted">Waiting for approval · ' + esc(P.how || '') + '</div><div class="when">' + esc(slotLabel(P, VIEW_TZ, true)) + '</div>' +
+      (VIEW_TZ !== ET ? '<div class="small muted">' + esc(slotLabel(P, ET, true)) + '</div>' : '') + '<div class="small muted">Nothing has gone to anyone outside MISMO yet. To use a different time, press <b>Book</b> under it in the grid below.</div></div>';
+    var apa = el('div', 'grow-row');
+    if (canApprove()) apa.appendChild(btn('Approve This Time', '', function () { approveSlot(req, P); }, 'check'));
+    else apa.appendChild(el('span', 'small muted', 'Vanessa or Jonna approves this.'));
+    apb.appendChild(apa); b.appendChild(apb);
+  }
+  if (R.approved && R.stage === 'approve') b.appendChild(el('div', 'notice', '<b>Approved by ' + esc(R.approved.by || 'staff') + '.</b> The confirmation goes out within a few minutes.'));
   if (look) b.appendChild(el('div', 'notice bad', '<b>The Scheduler stopped because ' + esc(R.why || 'it needs a person') + '.</b> Fix what’s needed (for example <b>Edit details</b> to add who should attend), then hand it back, or take it from here yourself.'));
   if (R.replyAt) b.appendChild(el('div', 'notice', '<b>' + esc(R.replyFrom || 'Someone') + ' replied by email ' + esc(whenAgo(R.replyAt)) + ':</b> “' + esc(R.replySnippet || '') + '”'));
   var rq = R.requester || {};
@@ -1920,6 +1948,10 @@ function tzSelect() {
   return s;
 }
 function bookSlot(req, sl) {
+  if (isAuto(req)) {
+    if (!confirm('Approve ' + slotLabel(sl, VIEW_TZ, true) + ' for “' + req.title + '”?\n\nThe Scheduler then sends everyone the confirmation from scheduling@mismo.org.')) return;
+    return approveSlot(req, sl);
+  }
   var sc = score(req, sl);
   var msg = 'Book “' + req.title + '” for ' + slotLabel(sl, VIEW_TZ, true) + '?\n\n' + sc.yes + ' can make it' + (sc.maybe ? ', ' + sc.maybe + ' tentative' : '') + (sc.no ? ', ' + sc.no + ' can’t' : '') + (sc.none ? ', ' + sc.none + ' haven’t said' : '') + '.\n\nNext you’ll send the calendar invite from Outlook.';
   if (!confirm(msg)) return;
@@ -2642,7 +2674,15 @@ function previewRequests() {
     guests: [{ id: 'g6', code: 'preview-alex', name: 'Alex Kim', email: 'alex.kim@example.com', org: 'Example Bank' }],
     robot: { auto: true, stage: 'person', why: 'the email doesn’t say who from MISMO should be in the meeting', readBy: 'claude', acked: now - 3 * 36e5, requester: { name: 'Alex Kim', email: 'alex.kim@example.com' }, offered: [] },
     log: [{ at: now - 3 * 36e5, by: 'Scheduler', what: 'Handed to a person: the email doesn’t say who from MISMO should be in the meeting' }], updatedAt: now - 3 * 36e5 };
-  return [au, lk, vq, sd, ex];
+  var apS = etAt(d1[1], '11:00');
+  var ap = { id: 'ap2b4d6f8h', title: 'Sample: Data Standards Briefing, Example Credit Union (made up)', purpose: 'A made-up request where the Scheduler found a time and is waiting for approval.', duration: 30, where: 'Zoom', followDays: 2,
+    owner: 'vrios@mismo.org', ownerName: 'Vanessa Rios', askedBy: 'Morgan Lee', askedByEmail: 'morgan.lee@example.com', createdAt: now - 40 * 6e4, createdBy: 'Scheduler', internal: ['jonathan', 'perry'],
+    slots: [{ id: 'p0', s: apS, e: apS + 30 * M, added: now - 40 * 6e4 }],
+    guests: [{ id: 'g7', code: 'preview-morgan', name: 'Morgan Lee', email: 'morgan.lee@example.com', org: 'Example Credit Union' }],
+    robot: { auto: true, stage: 'approve', readBy: 'claude', acked: now - 40 * 6e4, requester: { name: 'Morgan Lee', email: 'morgan.lee@example.com' }, offered: [{ s: apS - 60 * M, e: apS + 60 * M }],
+      proposed: { id: 'p0', s: apS, e: apS + 30 * M, how: 'one of the times Morgan Lee offered, and everyone from MISMO is free', at: now - 40 * 6e4 } },
+    log: [{ at: now - 40 * 6e4, by: 'Scheduler', what: 'Found a time — waiting for approval' }], updatedAt: now - 40 * 6e4 };
+  return [ap, au, lk, vq, sd, ex];
 }
 function previewSent() {
   var now = Date.now();
