@@ -3184,7 +3184,7 @@ var HELP = [
     '<tr><td><b>Follow-Ups Finished</b></td><td>Vanessa, Jonna copied</td><td>When the third follow-up goes with no answer. Start them again for three more, leave them stopped, or close the request as Couldn’t Schedule.</td></tr>' +
     '<tr><td><b>Approve a Time</b></td><td>Vanessa, Jonna copied</td><td>When a time works for everyone.</td></tr>' +
     '<tr><td><b>Confirmed: … on …</b></td><td>The guests and the person who asked, MISMO attendees copied</td><td>Once a time is approved.</td></tr>' +
-    '<tr><td><b>Calendar Invitation</b></td><td>Everyone in the meeting</td><td>Once a time is approved: an Outlook invitation from scheduling@mismo.org with a Zoom meeting made on the MISMO Zoom account.</td></tr>' +
+    '<tr><td><b>Calendar Invitation</b></td><td>Everyone in the meeting</td><td>Once a time is approved: an Outlook invitation from scheduling@mismo.org with the MISMO Zoom room link (info@mismo.org’s room). Guests can join any time. The Scheduler never books two Zoom meetings at once, or over info@mismo.org’s own meetings, since the room holds one meeting at a time.</td></tr>' +
     '<tr><td><b>Booked and Invited</b></td><td>Vanessa, Jonna copied</td><td>Once the invitation has gone. (If it can’t go by itself, this is <b>Booked, Send the Invite</b> instead, with a button that opens it in Outlook.)</td></tr>' +
     '<tr><td><b>Needs a Look</b></td><td>Vanessa, Jonna copied</td><td>When the Scheduler stops on a request.</td></tr>' +
     '<tr><td><b>Reply About …</b></td><td>Vanessa, Jonna copied</td><td>When someone replies to a Scheduler email.</td></tr></tbody></table>' +
@@ -3201,6 +3201,7 @@ var HELP = [
     '<tr><td>An email failed five times</td><td>Tell Jonna: the Send Emails flow in Power Automate may need attention.</td></tr></tbody></table>'; } },
   { id: 'behind', k: '#14486e', t: 'Behind the Scenes', h: function () { return '<h2>How It’s Put Together</h2><p class="lead">For Jonna, and for anyone looking after the Scheduler later.</p>' +
     '<table><thead><tr><th>Piece</th><th>What it does</th><th>Where it lives</th></tr></thead><tbody>' +
+    '<tr><td><b>Send Invite</b></td><td>Puts the approved meeting on the scheduling@mismo.org calendar and sends everyone the Outlook invitation with the Zoom room link.</td><td>Power Automate, “Scheduler - Send Invite” (Jonna’s license). Its link is the FLOW_INVITE_URL secret on GitHub.</td></tr>' +
     '<tr><td><b>Email Watcher</b></td><td>Passes every new email in scheduling@mismo.org to the Scheduler on GitHub, within about five minutes.</td><td>Power Automate, “Scheduler - Email Watcher” (Jonna’s license). Needs its GitHub key in the Authorization header.</td></tr>' +
     '<tr><td><b>The Scheduler Robot</b></td><td>Reads emails with Claude, decides, keeps polls current, books, and sends the emails. Runs on every new email, every guest answer or save, and every two hours on working days.</td><td>GitHub: GitMISMO/scheduler-data, robot folder and the Actions tab.</td></tr>' +
     '<tr><td><b>Send Emails</b></td><td>Sends each email from scheduling@mismo.org.</td><td>Power Automate, “Scheduler - Send Emails”. Its address is the FLOW_SEND_URL secret.</td></tr>' +
