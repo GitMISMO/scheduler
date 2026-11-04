@@ -212,12 +212,14 @@ c57 -33 76 -84 76 -200 0 -116 -19 -167 -76 -200 -32 -19 -52 -20 -294 -20
     if (d.status === 'cancelled') { note('warn', '<b>This meeting is no longer being scheduled.</b> Nothing more is needed from you. If you have questions, write to ' + esc(d.organizer || 'MISMO') + (d.organizerEmail ? ' at <a href="mailto:' + esc(d.organizerEmail) + '">' + esc(d.organizerEmail) + '</a>' : '') + '.'); return; }
     if (d.status === 'booked') {
       var c = d.chosen;
-      note('ok', '<b>“' + esc(d.title) + '” is booked' + (c ? ' for ' + esc(day(c.s)) + ', ' + esc(time(c.s)) + ' ' + esc(abbr(c.s)) : '') + '.</b> A calendar invitation will come from ' + esc(d.organizer || 'MISMO') + '. Thank you!');
+      note('ok', '<b>“' + esc(d.title) + '” is booked' + (c ? ' for ' + esc(day(c.s)) + ', ' + esc(time(c.s)) + ' ' + esc(abbr(c.s)) : '') + '.</b> The calendar invitation comes from MISMO Scheduling (scheduling@mismo.org). Thank you!');
       return;
     }
     note('', '');
     (d.answer && d.answer.yes || []).forEach(function (id) { ans[id] = 'yes'; });
-    if (d.answer) d.slots.forEach(function (s) { if (!ans[s.id]) ans[s.id] = 'no'; });
+    /* Only times they actually saw last time come back as ✗. A time added since their answer
+       (or when we can't tell) starts blank, exactly like the first poll. */
+    if (d.answer) d.slots.forEach(function (s) { if (!ans[s.id] && s.added && d.answer.at && s.added <= d.answer.at + 15 * 60000) ans[s.id] = 'no'; });
     $('title').textContent = d.title;
     $('lede').textContent = 'Hi ' + (String(d.guest || '').split(/\s+/)[0] || 'there') + ' — ' + (d.organizer || 'MISMO') + ' is finding a time for this meeting. Tick ✓ for the times that work and ✗ for the ones that don’t, then press Send.';
     $('facts').innerHTML = '<span>' + esc(d.duration || 30) + ' minutes</span>' + (d.where ? '<span>' + esc(d.where) + '</span>' : '') + (d.purpose ? '<span style="flex-basis:100%">' + esc(d.purpose) + '</span>' : '');
@@ -238,7 +240,7 @@ c57 -33 76 -84 76 -200 0 -116 -19 -167 -76 -200 -32 -19 -52 -20 -294 -20
       $('form').hidden = true;
       var n = body.yes.length;
       note('ok', '<b>Thank you — your answers are in.</b> ' + (n ? n + (n === 1 ? ' time works' : ' times work') + ' for you. ' : 'None of these times work for you — ' + esc(DATA.organizer || 'MISMO') + ' will be in touch with others. ') +
-        esc(DATA.organizer || 'MISMO') + ' will send a calendar invitation once a time is chosen. You can come back to this link to change your answers.' + (PREVIEW ? '<br><br><i>Preview: nothing was sent.</i>' : ''));
+        'You’ll get the calendar invitation from MISMO Scheduling once a time is chosen. You can come back to this link to change your answers.' + (PREVIEW ? '<br><br><i>Preview: nothing was sent.</i>' : ''));
       window.scrollTo(0, 0);
     }, function (err) {
       $('send').disabled = false;

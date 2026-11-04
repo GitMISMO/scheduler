@@ -1517,6 +1517,8 @@ function guestAnswer(g, sl) {
   if (!g.answer) return null;
   if ((g.answer.yes || []).indexOf(sl.id) >= 0) return 'yes';
   if ((g.answer.maybe || []).indexOf(sl.id) >= 0) return 'maybe';
+  /* a time added after they answered hasn't been answered yet (same rule as the robot) */
+  if (sl.added && g.answer.at && sl.added > g.answer.at + 15 * 60000) return null;
   return 'no';
 }
 function score(req, sl) {
