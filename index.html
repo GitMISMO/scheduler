@@ -2947,7 +2947,8 @@ function viewDash(app) {
 
   /* ---- Team This Week ---- */
   var tw = dashPanel('Team This Week', 'free time, 9–5 Eastern', 'Calendar', function () { go('cal'); });
-  var days5 = bizDaysAhead(5, isoAdd(todayISO(ET), -1)).filter(function (d) { return !isWeekend(d); }).slice(0, 5);
+  var tNow = Date.now(), tIso = todayISO(ET), dayOver = tNow >= at(tIso, 17 * 60, ET);
+  var days5 = bizDaysAhead(5, dayOver ? tIso : isoAdd(tIso, -1)).filter(function (d) { return !isWeekend(d); }).slice(0, 5);
   var g = el('div', 'avgrid');
   g.appendChild(el('span'));
   days5.forEach(function (d) { g.appendChild(el('span', 'h', esc(new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', timeZone: 'UTC' })))); });
@@ -2955,7 +2956,7 @@ function viewDash(app) {
     g.appendChild(el('span', 'who', esc(pp.name)));
     days5.forEach(function (d) {
       var free = 0, known = 0;
-      for (var m = 9 * 60; m < 17 * 60; m += 30) { var st = calState(pp.id, at(d, m, ET), at(d, m + 30, ET)); if (st === null) continue; known++; if (st === 'free') free++; }
+      for (var m = 9 * 60; m < 17 * 60; m += 30) { if (at(d, m + 30, ET) <= tNow) continue; var st = calState(pp.id, at(d, m, ET), at(d, m + 30, ET)); if (st === null) continue; known++; if (st === 'free') free++; }
       var c = el('span', 'c');
       if (!known) { c.style.background = 'var(--unk)'; c.textContent = '–'; c.title = pp.name + ': no Outlook data'; }
       else { var f = free / known, pctF = Math.round(100 * f); c.textContent = pctF + '%'; c.title = pp.name + ', ' + d + ': ' + pctF + '% free'; c.style.background = 'color-mix(in srgb,' + (f >= .6 ? '#5fd39a' : f >= .3 ? '#f0b94a' : '#ff8f7d') + ' ' + Math.round(22 + 30 * (f >= .6 ? f : 1 - f)) + '%,var(--surface))'; }
