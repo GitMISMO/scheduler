@@ -42,6 +42,7 @@ if (window.SCHED_PREVIEW) document.documentElement.removeAttribute('data-rs-gate
   --good:#0f7b5c; --bad:#b3372c; --warn:#a2701a;
   --good-soft:#e2f3ec; --bad-soft:#fbe9e7; --warn-soft:#fbf1dc; --link:#14486e;
   --btn:#0d314c; --btn-ink:#ffffff; --tab-on:#0d314c;
+  --c1:#2477b8; --c2:#eb6834; --c3:#1baf7a; --c4:#eda100;
   --free:#d9efe5; --some:#fbecc9; --busy:#f3d6d2; --unk:#eef3f7; --pick:#0d314c; --pick-ink:#fff;
   --shadow:0 1px 2px rgba(13,49,76,.06),0 4px 14px rgba(13,49,76,.05);
   --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
@@ -55,6 +56,7 @@ if (window.SCHED_PREVIEW) document.documentElement.removeAttribute('data-rs-gate
   --good:#4fc79b; --bad:#f08579; --warn:#e0a83c; --sky-wash:#102f41;
   --good-soft:#123a30; --bad-soft:#3d1f1d; --warn-soft:#3a2e14; --link:#74bfeb;
   --btn:#74bfeb; --btn-ink:#06202f; --tab-on:#74bfeb;
+  --c1:#3987e5; --c2:#d95926; --c3:#199e70; --c4:#c98500;
   --free:#16463a; --some:#4a3b17; --busy:#4b2422; --unk:#173547; --pick:#74bfeb; --pick-ink:#06202f;
   --shadow:0 1px 2px rgba(0,0,0,.3);
   color-scheme:dark;
@@ -66,6 +68,7 @@ if (window.SCHED_PREVIEW) document.documentElement.removeAttribute('data-rs-gate
   --good:#4fc79b; --bad:#f08579; --warn:#e0a83c; --sky-wash:#102f41;
   --good-soft:#123a30; --bad-soft:#3d1f1d; --warn-soft:#3a2e14; --link:#74bfeb;
   --btn:#74bfeb; --btn-ink:#06202f; --tab-on:#74bfeb;
+  --c1:#3987e5; --c2:#d95926; --c3:#199e70; --c4:#c98500;
   --free:#16463a; --some:#4a3b17; --busy:#4b2422; --unk:#173547; --pick:#74bfeb; --pick-ink:#06202f;
   --shadow:0 1px 2px rgba(0,0,0,.3);
   color-scheme:dark;
@@ -150,6 +153,7 @@ main{max-width:1180px;margin:0 auto;padding:24px 16px 80px}
 .p-draft{background:var(--surface-3);color:var(--ink-2);border-color:var(--border)}
 .p-due{background:var(--bad-soft);color:var(--bad);border-color:var(--bad)}
 .p-cancel{background:var(--surface-3);color:var(--ink-3);text-decoration:line-through}
+.p-unsch{background:var(--bad-soft);color:var(--bad)}
 .p-yes{background:var(--good-soft);color:var(--good)}
 .p-wait{background:var(--warn-soft);color:var(--warn)}
 
@@ -661,6 +665,39 @@ body.railmini .rail nav button .n{display:none}
 .hside>.panel:last-child{flex:1}
 .feed .fi{grid-template-columns:76px minmax(0,1fr)}
 .feed .fi span{overflow:hidden;text-overflow:ellipsis}
+/* ---- Statistics ---- */
+.stathead{display:flex;flex-wrap:wrap;gap:12px 16px;align-items:flex-end;justify-content:space-between;margin-bottom:18px}
+.stathead h1{margin:0;font-size:26px;color:var(--ink)}
+.stathead p{margin:4px 0 0;color:var(--ink-2);font-size:14px}
+.stiles{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin-bottom:28px}
+@media (max-width:1180px){.stiles{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:560px){.stiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.stile{background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--k,var(--c1));border-radius:10px;box-shadow:var(--shadow);padding:13px 15px 14px;min-width:0}
+.stile small{display:block;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stile b{display:block;font-size:28px;line-height:1.1;margin:6px 0 3px;font-variant-numeric:tabular-nums;color:var(--ink)}
+.stile span{display:block;font-size:12.5px;color:var(--ink-2)}
+.mixbar{display:flex;gap:2px;height:16px;margin:16px 16px 14px;border-radius:4px;overflow:hidden;background:var(--surface)}
+.mixbar i{display:block;min-width:4px;outline-offset:2px}
+.mixkey{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px 22px;padding:0 16px 16px}
+.mixkey div{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-2);min-width:0}
+.mixkey i{width:10px;height:10px;border-radius:3px;flex:none}
+.mixkey b{margin-left:auto;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+.mixkey em{font-style:normal;color:var(--ink-3);font-weight:400;margin-left:4px}
+.hbars{padding:12px 16px 16px;display:grid;gap:9px}
+.hbar{display:grid;grid-template-columns:minmax(90px,150px) minmax(60px,1fr) 70px;gap:10px;align-items:center;font-size:13px}
+.hbar .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
+.hbar .tr{height:12px;display:flex}
+.hbar .tr i{display:block;height:100%;background:var(--c1);border-radius:0 4px 4px 0;min-width:3px}
+.hbar b{text-align:right;font-variant-numeric:tabular-nums;color:var(--ink);font-weight:600;white-space:nowrap}
+.hbar b em{font-style:normal;font-weight:400;color:var(--ink-3)}
+.figs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+.figs div{padding:11px 16px;border-top:1px solid var(--rule);display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:13px;color:var(--ink-2)}
+.figs div:nth-child(odd){border-right:1px solid var(--rule)}
+.figs b{color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+@media (max-width:560px){.figs{grid-template-columns:1fr}.figs div:nth-child(odd){border-right:0}.mixkey{grid-template-columns:1fr}}
+.stgrid{grid-template-columns:minmax(0,1fr) minmax(0,1fr);margin-bottom:16px}
+@media (max-width:900px){.stgrid{grid-template-columns:1fr}}
+.sttip{position:fixed;z-index:300;pointer-events:none;background:var(--navy-deep);color:#fff;font-size:12px;line-height:1.35;padding:6px 9px;border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:240px}
 
 </style>
 </head>
@@ -730,6 +767,9 @@ c57 -33 76 -84 76 -200 0 -116 -19 -167 -76 -200 -32 -19 -52 -20 -294 -20
     <button type="button" data-hq="dash" aria-current="page" title="Dashboard">
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="8" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="5" rx="1.5"/><rect x="13.5" y="11.5" width="7" height="9" rx="1.5"/><rect x="3.5" y="14.5" width="7" height="6" rx="1.5"/></svg>
       <span>Dashboard</span></button>
+    <button type="button" data-hq="stats" title="Statistics">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V11M10 20V5M16 20v-6M21 20H3"/></svg>
+      <span>Statistics</span></button>
   </nav>
   <div class="mast-right">
     <button class="theme-btn" id="help-btn" type="button" title="Help" data-hq="help">
@@ -1284,9 +1324,17 @@ function phase(req) {
 var PHASE = {
   draft: { n: 'Getting ready', c: 'p-draft' }, collecting: { n: 'Waiting on replies', c: 'p-collect' },
   ready: { n: 'Ready to book', c: 'p-ready' }, booked: { n: 'Booked', c: 'p-booked' }, cancelled: { n: 'Cancelled', c: 'p-cancel' },
-  look: { n: 'Needs a Look', c: 'p-due' }, auto: { n: 'Working on It', c: 'p-collect' }, approve: { n: 'Waiting for Approval', c: 'p-ready' }
+  look: { n: 'Needs a Look', c: 'p-due' }, unscheduled: { n: 'Couldn’t Schedule', c: 'p-unsch' }, auto: { n: 'Working on It', c: 'p-collect' }, approve: { n: 'Waiting for Approval', c: 'p-ready' }
 };
-function phasePill(req) { var p = PHASE[phase(req)]; return '<span class="pill ' + p.c + '">' + p.n + '</span>'; }
+function couldntSchedule(r) { return !!(r && r.status === 'cancelled' && r.closed === 'unscheduled'); }
+function bookedSlot(r) { return r && r.status === 'booked' ? slotById(r, r.chosen) : null; }
+function isPast(r) { var s = bookedSlot(r); return !!(s && s.e <= Date.now()); }
+function closeUnscheduled(req) {
+  if (!confirm('Close “' + (req.title || 'this request') + '” as Couldn’t Schedule? The Scheduler stops emailing about it, and it stays on the Dashboard for reference. You can bring it back later.')) return;
+  var r = clone(req); r.status = 'cancelled'; r.closed = 'unscheduled'; r.closedAt = Date.now(); r.closedBy = me().name;
+  put(r, 'Closed: couldn’t schedule'); toast('Closed as Couldn’t Schedule.');
+}
+function phasePill(req) { var p = couldntSchedule(req) ? PHASE.unscheduled : PHASE[phase(req)]; return '<span class="pill ' + p.c + '">' + p.n + '</span>'; }
 function slotById(req, id) { return (req.slots || []).find(function (s) { return s.id === id; }) || null; }
 /* everyone's answer for one time: 'yes' | 'maybe' | 'no' | null */
 /* ----------------------------------------------------------------------------
@@ -1468,25 +1516,26 @@ function followList(mineOnly) {
    ====================================================================== */
 var PANE_VIEWS = ['inbox', 'follow', 'list', 'new', 'cal'];
 var STATE = { tab: 'dash', pane: null, reqId: null, fuMine: lsGet('fuMine', true), listMine: lsGet('listMine', false), listShow: lsGet('listShow', 'active') };
+var PAGES = ['dash', 'stats', 'help'];
 function readHash() {
   var h = location.hash.replace(/^#/, ''), m = /(?:^|&)r=([a-z0-9]+)/.exec(h), t = /(?:^|&)tab=([a-z]+)/.exec(h);
   STATE.reqId = m ? m[1] : null;
   var tab = t ? t[1] : 'dash';
   if (PANE_VIEWS.indexOf(tab) >= 0) { STATE.tab = 'dash'; STATE.pane = tab; }
-  else { STATE.tab = tab === 'help' ? 'help' : 'dash'; STATE.pane = null; }
+  else { STATE.tab = PAGES.indexOf(tab) >= 0 ? tab : 'dash'; STATE.pane = null; }
   if (STATE.reqId) { STATE.tab = 'dash'; STATE.pane = 'req'; }
 }
 /* the Dashboard and Help are the pages; a request, the full lists, the calendar and a new
    request open in the panel on the right, over the Dashboard */
 function go(tab, reqId) {
-  var wasHelp = STATE.tab === 'help';
+  var wasTab = STATE.tab;
   if (reqId) { STATE.tab = 'dash'; STATE.pane = 'req'; STATE.reqId = reqId; }
   else if (PANE_VIEWS.indexOf(tab) >= 0) { STATE.tab = 'dash'; STATE.pane = tab; STATE.reqId = null; }
-  else { STATE.tab = tab === 'help' ? 'help' : 'dash'; STATE.pane = null; STATE.reqId = null; }
+  else { STATE.tab = PAGES.indexOf(tab) >= 0 ? tab : 'dash'; STATE.pane = null; STATE.reqId = null; }
   var h = reqId ? '#r=' + reqId : '#tab=' + (STATE.pane || STATE.tab);
   if (location.hash !== h) history.pushState(null, '', h);
   render({ full: true });
-  if (!STATE.pane || wasHelp) window.scrollTo(0, 0);
+  if (!STATE.pane || wasTab !== STATE.tab) window.scrollTo(0, 0);
   var pb = $('#pane-b'); if (pb && STATE.pane) pb.scrollTop = 0;
 }
 function closePane() { go('dash'); }
@@ -1506,7 +1555,7 @@ function render(opts) {
   if (PREVIEW) app.appendChild(el('div', 'preview-band', '<b>Preview.</b> This is the Scheduler with sample data (made-up example requests). Nothing you do here is saved or sent. On resources.mismo.org it uses your team’s real data and Outlook availability.'));
   if (DB.problem) app.appendChild(el('div', 'notice bad', esc(DB.problem)));
   if (!DB.loaded) { app.appendChild(el('div', 'empty', '<span class="spinner"></span> Loading…')); return; }
-  (STATE.tab === 'help' ? viewHelp : viewDash)(app);
+  (STATE.tab === 'help' ? viewHelp : STATE.tab === 'stats' ? viewStats : viewDash)(app);
   if (!full) window.scrollTo(0, y);
   if (keepFocus && document.getElementById(keepFocus)) try { document.getElementById(keepFocus).focus(); } catch (e) {}
 }
@@ -1530,7 +1579,7 @@ function renderPane() {
   if (STATE.pane === 'req') {
     var r = getReq(STATE.reqId);
     $('#pane-t', p).textContent = r ? (r.title || 'Meeting request') : 'Not found';
-    $('#pane-s', p).textContent = r ? PHASE[phase(r)].n + (r.robot && r.robot.auto ? ' · Automatic' : '') + ' · ' + (r.duration || 30) + ' min' : '';
+    $('#pane-s', p).textContent = r ? (couldntSchedule(r) ? PHASE.unscheduled : PHASE[phase(r)]).n + (r.robot && r.robot.auto ? ' · Automatic' : '') + ' · ' + (r.duration || 30) + ' min' : '';
     if (r) viewDetail(b, r); else b.appendChild(el('div', 'empty', 'That request isn’t here any more.'));
   } else {
     var t = PANE_TITLES[STATE.pane] || ['', ''];
@@ -1655,20 +1704,28 @@ function viewList(app) {
   app.appendChild(st);
   var f = el('div', 'filters');
   f.appendChild(seg([[false, 'Everyone’s'], [true, 'Mine']], STATE.listMine, function (v) { STATE.listMine = v; lsSet('listMine', v); render(); }));
-  f.appendChild(seg([['active', 'In Progress'], ['look', 'Needs a Look'], ['booked', 'Booked'], ['all', 'All']], STATE.listShow, function (v) { STATE.listShow = v; lsSet('listShow', v); render(); }));
+  f.appendChild(seg([['active', 'In Progress'], ['look', 'Needs a Look'], ['booked', 'Scheduled'], ['past', 'Past'], ['unscheduled', 'Couldn’t Schedule'], ['all', 'All']], STATE.listShow, function (v) { STATE.listShow = v; lsSet('listShow', v); render(); }));
   app.appendChild(f);
   var m = me().email;
   var list = allReqs().filter(function (r) {
     if (STATE.listMine && String(r.owner || '').toLowerCase() !== m) return false;
     var ph = phase(r);
     if (STATE.listShow === 'active') return ph !== 'booked' && ph !== 'cancelled';
-    if (STATE.listShow === 'booked') return ph === 'booked';
+    if (STATE.listShow === 'booked') return ph === 'booked' && !isPast(r);
+    if (STATE.listShow === 'past') return isPast(r);
+    if (STATE.listShow === 'unscheduled') return couldntSchedule(r);
     if (STATE.listShow === 'look') return ph === 'look' || ph === 'approve';
     return true;
-  }).sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); });
+  }).sort(function (a, b) {
+    var sa = bookedSlot(a), sb = bookedSlot(b);
+    if (STATE.listShow === 'booked' && sa && sb) return sa.s - sb.s;
+    if (STATE.listShow === 'past' && sa && sb) return sb.s - sa.s;
+    if (STATE.listShow === 'unscheduled') return (b.closedAt || b.updatedAt || 0) - (a.closedAt || a.updatedAt || 0);
+    return (b.updatedAt || 0) - (a.updatedAt || 0);
+  });
   if (!list.length) {
     /* no empty well: say what happens next instead */
-    var none = { look: 'Nothing needs a look right now.', booked: 'Nothing booked yet.', all: 'No requests yet.', active: 'Nothing in progress right now.' }[STATE.listShow] || '';
+    var none = { look: 'Nothing needs a look right now.', booked: 'Nothing scheduled ahead.', past: 'No past meetings yet.', unscheduled: 'Nothing closed as Couldn’t Schedule.', all: 'No requests yet.', active: 'Nothing in progress right now.' }[STATE.listShow] || '';
     app.appendChild(el('p', 'muted', esc(none) + ' When an email reaches scheduling@mismo.org, the Scheduler takes it from there:'));
     app.appendChild(howItRuns());
     return;
@@ -1901,9 +1958,9 @@ function viewDetail(app, req) {
     }
     bk.appendChild(ba); app.appendChild(bk);
   }
-  if (req.status === 'cancelled') app.appendChild(el('div', 'notice warn', '<b>This request was cancelled.</b> ' + (canEdit() ? '<button class="linkbtn" type="button" id="reopen">Bring it back</button>' : '')));
+  if (req.status === 'cancelled') app.appendChild(el('div', 'notice warn', (couldntSchedule(req) ? '<b>We couldn’t find a time for this one.</b> Closed' + (req.closedBy ? ' by ' + esc(first(req.closedBy)) : '') + (req.closedAt ? ' ' + esc(fmtDay(req.closedAt, VIEW_TZ)) : '') + '. ' : '<b>This request was cancelled.</b> ') + (canEdit() ? '<button class="linkbtn" type="button" id="reopen">Bring it back</button>' : '')));
   if (req.robot) app.appendChild(robotPanel(req, editable));
-  if ($('#reopen')) $('#reopen').onclick = function () { var r = clone(req); r.status = ''; put(r, 'Brought back'); };
+  if ($('#reopen')) $('#reopen').onclick = function () { var r = clone(req); r.status = ''; delete r.closed; delete r.closedAt; delete r.closedBy; put(r, 'Brought back'); };
 
   /* times + who can make it */
   var pT = el('section', 'panel');
@@ -1976,8 +2033,10 @@ function viewDetail(app, req) {
   (req.log || []).slice().reverse().forEach(function (x) { ul.appendChild(el('li', null, '<span>' + esc(fmtDay(x.at, VIEW_TZ) + ' ' + fmtTime(x.at, VIEW_TZ)) + '</span><span>' + esc(x.what) + ' — ' + esc(first(x.by)) + '</span>')); });
   if ((req.log || []).length) { lb.appendChild(el('div', 'small muted', 'History')); lb.appendChild(ul); }
   if (editable && req.status !== 'booked') {
-    var cx = btn('Cancel this request', 'danger sm', function () { if (confirm('Cancel “' + req.title + '”? Its Team HQ reminder will be ticked off. You can bring it back later.')) { var r = clone(req); r.status = 'cancelled'; put(r, 'Cancelled'); } });
-    cx.style.marginTop = '14px'; lb.appendChild(cx);
+    var cx = btn('Cancel this request', 'danger sm', function () { if (confirm('Cancel “' + req.title + '”? Its Team HQ reminder will be ticked off. You can bring it back later.')) { var r = clone(req); r.status = 'cancelled'; delete r.closed; r.closedAt = Date.now(); r.closedBy = me().name; put(r, 'Cancelled'); } });
+    cx.style.marginTop = '14px';
+    if (req.status !== 'cancelled') { var cu0 = btn('Close as Couldn’t Schedule', 'ghost sm', function () { closeUnscheduled(req); }); cu0.style.marginTop = '14px'; cu0.style.marginRight = '8px'; lb.appendChild(cu0); }
+    lb.appendChild(cx);
   }
   app.appendChild(pL);
 }
@@ -1992,7 +2051,7 @@ function loadSent() {
 function robotPanel(req, editable) {
   var R = req.robot || {}, look = needsLook(req), on = isAuto(req);
   var p = el('section', 'panel');
-  var sub = look ? 'Stopped — needs a person' : awaitingApproval(req) ? 'Found a time — waiting for approval' : !R.auto ? 'Handed over to staff' : req.status === 'booked' ? 'Booked it' : R.stage === 'polling' ? 'Poll out, set ' + (R.round || 1) + ' of times' : 'Working on it';
+  var sub = couldntSchedule(req) ? 'Couldn’t schedule — closed' : req.status === 'cancelled' ? 'Cancelled' : look ? 'Stopped — needs a person' : awaitingApproval(req) ? 'Found a time — waiting for approval' : !R.auto ? 'Handed over to staff' : req.status === 'booked' ? 'Booked it' : R.stage === 'polling' ? 'Poll out, set ' + (R.round || 1) + ' of times' : 'Working on it';
   p.innerHTML = '<div class="panel-h"><h2>Scheduled Automatically</h2><span class="sub">' + esc(sub) + '</span></div>';
   var acts = el('div', 'acts'); $('.panel-h', p).appendChild(acts);
   var b = el('div', 'panel-b'); p.appendChild(b);
@@ -2006,7 +2065,7 @@ function robotPanel(req, editable) {
     apb.appendChild(apa); b.appendChild(apb);
   }
   if (R.approved && R.stage === 'approve') b.appendChild(el('div', 'notice', '<b>Approved by ' + esc(R.approved.by || 'staff') + '.</b> The confirmation goes out within a few minutes.'));
-  if (look) b.appendChild(el('div', 'notice bad', '<b>The Scheduler stopped because ' + esc(R.why || 'it needs a person') + '.</b> Fix what’s needed (for example <b>Edit details</b> to add who should attend), then hand it back, or take it from here yourself.'));
+  if (look) { var lk = el('div', 'notice bad', '<b>The Scheduler stopped because ' + esc(R.why || 'it needs a person') + '.</b> Fix what’s needed (for example <b>Edit details</b> to add who should attend), then hand it back, or take it from here yourself. If there’s no time that works, close it as Couldn’t Schedule. '); if (editable) { var lkb = el('button', 'linkbtn', 'Close as Couldn’t Schedule'); lkb.type = 'button'; lkb.onclick = function () { closeUnscheduled(req); }; lk.appendChild(lkb); } b.appendChild(lk); }
   if (R.replyAt) b.appendChild(el('div', 'notice', '<b>' + esc(R.replyFrom || 'Someone') + ' replied by email ' + esc(whenAgo(R.replyAt)) + ':</b> “' + esc(R.replySnippet || '') + '”'));
   var rq = R.requester || {};
   var offered = (R.offered || []).map(function (w) { return fmtDay(w.s, VIEW_TZ) + ' ' + fmtTime(w.s, VIEW_TZ) + '–' + fmtTime(w.e, VIEW_TZ); });
@@ -2928,21 +2987,25 @@ function viewDash(app) {
   if (!polls.length) pl.p.appendChild(el('div', 'empty', 'No polls out. When a request needs guests to choose, its poll shows here with who has answered.'));
   L.appendChild(pl.p);
 
-  /* ---- Coming Up ---- */
-  var cu = dashPanel('Coming Up', 'next two weeks', 'Booked', function () { STATE.listShow = 'booked'; lsSet('listShow', 'booked'); go('list'); });
-  coming.filter(function (x) { return x.sl.s < now + 15 * 864e5; }).slice(0, 6).forEach(function (x) {
-    var r = x.r, who = (r.internal || []).map(function (id) { var p = person(id); return p ? first(p.name) : id; }).concat((r.guests || []).map(function (g) { return g.name || g.email; }));
-    cu.rows.appendChild(dashRow({ k: '#5fd39a', nm: r.title || 'Meeting', small: who.join(', '), wh: fmtTime(x.sl.s, VIEW_TZ) + ' ' + tzAbbr(x.sl.s, VIEW_TZ) + ' · ' + (r.where || 'Zoom'), age: dayWord(parts(x.sl.s, VIEW_TZ).iso).replace(/^./, function (c) { return c.toUpperCase(); }), ageCls: 'ok', go: function () { go(null, r.id); } }));
+  /* ---- Scheduled: every booked meeting still ahead ---- */
+  var whoOf = function (r) { return (r.internal || []).map(function (id) { var p = person(id); return p ? first(p.name) : id; }).concat((r.guests || []).map(function (g) { return g.name || g.email; })).join(', '); };
+  var cu = dashPanel('Scheduled', coming.length ? plural(coming.length, 'meeting', 'meetings') + ' ahead' : '', coming.length > 6 ? 'All Scheduled' : '', function () { STATE.listShow = 'booked'; lsSet('listShow', 'booked'); go('list'); });
+  coming.slice(0, 6).forEach(function (x) {
+    var r = x.r, soon = x.sl.s < now + 7 * 864e5;
+    cu.rows.appendChild(dashRow({ k: '#5fd39a', nm: r.title || 'Meeting', small: whoOf(r), wh: fmtTime(x.sl.s, VIEW_TZ) + ' ' + tzAbbr(x.sl.s, VIEW_TZ) + ' · ' + (r.where || 'Zoom'), age: dayWord(parts(x.sl.s, VIEW_TZ).iso).replace(/^./, function (c) { return c.toUpperCase(); }), ageCls: soon ? 'ok' : '', go: function () { go(null, r.id); } }));
   });
-  if (!cu.rows.children.length) {
-    var past = booked.map(function (r) { return { r: r, sl: slotById(r, r.chosen) }; }).filter(function (x) { return x.sl; }).sort(function (a, b) { return (b.r.bookedAt || 0) - (a.r.bookedAt || 0); }).slice(0, 4);
-    if (past.length) {
-      $('.ph h2', cu.p).textContent = 'Recently Booked';
-      var hn = $('.ph .hint', cu.p); if (hn) hn.textContent = 'nothing in the next two weeks';
-      past.forEach(function (x) { var r = x.r; cu.rows.appendChild(dashRow({ k: '#9fb3c8', nm: r.title || 'Meeting', small: slotLabel(x.sl, VIEW_TZ, true), wh: r.where || 'Zoom', age: 'Booked ' + shortAgo(r.bookedAt || now), go: function () { go(null, r.id); } })); });
-    } else cu.p.appendChild(el('div', 'empty', 'Nothing booked yet. Booked meetings show here with their time.'));
-  }
+  if (!coming.length) cu.p.appendChild(el('div', 'empty', 'Nothing on the calendar ahead. Once a time is approved, the meeting shows here until it happens.'));
   L.appendChild(cu.p);
+
+  /* ---- Past Meetings: booked and already happened ---- */
+  var pastM = booked.map(function (r) { return { r: r, sl: slotById(r, r.chosen) }; }).filter(function (x) { return x.sl && x.sl.e <= now; }).sort(function (a, b) { return b.sl.s - a.sl.s; });
+  var pm = dashPanel('Past Meetings', pastM.length ? pastM.length + ' so far' : '', pastM.length > 5 ? 'All Past' : '', function () { STATE.listShow = 'past'; lsSet('listShow', 'past'); go('list'); });
+  pastM.slice(0, 5).forEach(function (x) {
+    var r = x.r;
+    pm.rows.appendChild(dashRow({ k: '#9fb3c8', nm: r.title || 'Meeting', small: whoOf(r), wh: fmtTime(x.sl.s, VIEW_TZ) + ' ' + tzAbbr(x.sl.s, VIEW_TZ) + ' · ' + (r.where || 'Zoom'), age: fmtDay(x.sl.s, VIEW_TZ), go: function () { go(null, r.id); } }));
+  });
+  if (!pastM.length) pm.p.appendChild(el('div', 'empty', 'Meetings move here once they’ve happened, so you can look back at what was scheduled.'));
+  L.appendChild(pm.p);
 
   /* ---- Team This Week ---- */
   var tw = dashPanel('Team This Week', 'free time, 9–5 Eastern', 'Calendar', function () { go('cal'); });
@@ -2965,6 +3028,16 @@ function viewDash(app) {
   tw.rows.appendChild(g);
   tw.p.appendChild(el('div', 'avkey', '<span><i style="background:color-mix(in srgb,#5fd39a 45%,var(--surface))"></i>Mostly free</span><span><i style="background:color-mix(in srgb,#f0b94a 40%,var(--surface))"></i>Some time</span><span><i style="background:color-mix(in srgb,#ff8f7d 45%,var(--surface))"></i>Booked up</span>'));
   R.appendChild(tw.p);
+
+  /* ---- Couldn't Schedule: closed without a time ---- */
+  var unsch = all.filter(couldntSchedule).sort(function (a, b) { return (b.closedAt || b.updatedAt || 0) - (a.closedAt || a.updatedAt || 0); });
+  var us = dashPanel('Couldn’t Schedule', unsch.length ? plural(unsch.length, 'request', 'requests') : '', unsch.length > 4 ? 'All' : '', function () { STATE.listShow = 'unscheduled'; lsSet('listShow', 'unscheduled'); go('list'); });
+  unsch.slice(0, 4).forEach(function (r) {
+    var why = (r.robot && r.robot.why) ? 'Stopped because ' + r.robot.why : 'Closed by ' + (first(r.closedBy || '') || 'staff');
+    us.rows.appendChild(dashRow({ k: '#ff8f7d', nm: r.title || 'Meeting request', small: why, wh: whoOf(r), age: 'Closed ' + shortAgo(r.closedAt || r.updatedAt || now), go: function () { go(null, r.id); } }));
+  });
+  if (!unsch.length) us.p.appendChild(el('div', 'empty', 'Nothing yet. If we try and can’t find a time, close the request as Couldn’t Schedule and it stays here for reference.'));
+  L.appendChild(us.p);
 
   /* ---- Incoming Email ---- */
   var ib = dashPanel('Incoming Email', 'scheduling@mismo.org', 'All Email', function () { go('inbox'); });
@@ -3032,11 +3105,22 @@ var HELP = [
     '<tr><td><b>Polls Out</b></td><td>Every poll waiting on guests: who has answered, how many times are on offer, and reminders sent.</td></tr>' +
     '<tr><td><b>Booked This Week</b></td><td>Meetings booked in the last seven days, automatic and by hand.</td></tr>' +
     '<tr><td><b>Emails This Week</b></td><td>Everything that reached scheduling@mismo.org, and how many became requests.</td></tr>' +
-    '<tr><td><b>Coming Up</b></td><td>Booked meetings in the next two weeks.</td></tr>' +
+    '<tr><td><b>Scheduled</b></td><td>Every booked meeting still ahead, soonest first. This week’s are marked green.</td></tr>' +
+    '<tr><td><b>Past Meetings</b></td><td>Meetings we scheduled that have already happened, newest first, for reference.</td></tr>' +
+    '<tr><td><b>Couldn’t Schedule</b></td><td>Requests we tried and closed without a time, with the reason. Open one and press Bring it back to try again.</td></tr>' +
     '<tr><td><b>Team This Week</b></td><td>How much of each person’s day is free from 9 to 5 Eastern, from Outlook. Open Calendar for the half-hour view.</td></tr>' +
     '<tr><td><b>Incoming Email</b></td><td>The latest emails and what the Scheduler did with each one.</td></tr>' +
     '<tr><td><b>Latest Activity</b></td><td>Everything the Scheduler and the team did, newest first.</td></tr></tbody></table>' +
-    '<div class="hnote"><b>Search</b> is at the top of the menu on the left: it finds requests, people and emails.</div>'; } },
+    '<div class="hnote"><b>Search</b> is at the top of the menu on the left. Type a person’s name or email, a company, a subject line, a MISMO teammate, or a word like booked or couldn’t; type two words to narrow it down (for example <i>kelly booked</i>). It finds requests, outside guests and the emails that came in.</div>'; } },
+  { id: 'stats', k: '#2477b8', t: 'Statistics', h: function () { return '<h2>Statistics</h2><p class="lead">The Statistics tab on the left shows how scheduling is going. Pick Last 30 Days, Last 90 Days, This Year or All Time at the top; everything counts the requests started in that period. Hover over any bar for its number.</p>' +
+    '<table><thead><tr><th>Part</th><th>What it shows</th></tr></thead><tbody>' +
+    '<tr><td><b>The Six Figures</b></td><td>Requests, Booked, Couldn’t Schedule, In Progress, the average time from request to booked, and how long guests take to answer a poll.</td></tr>' +
+    '<tr><td><b>Where Requests Ended Up</b></td><td>The split between booked, couldn’t schedule, still in progress and cancelled.</td></tr>' +
+    '<tr><td><b>How Meetings Got Booked</b></td><td>Whether the times the person offered worked straight away, the first poll did it, more times were needed, or it was booked by hand.</td></tr>' +
+    '<tr><td><b>Polls and Approvals</b></td><td>Guests asked and answered, reminders, reply times, and how long a found time waits for approval.</td></tr>' +
+    '<tr><td><b>MISMO People in Meetings</b></td><td>For each person, meetings booked out of the requests they were on.</td></tr>' +
+    '<tr><td><b>Organizations</b></td><td>The companies we schedule with most, from the guest’s company or email address.</td></tr>' +
+    '<tr><td><b>Email to scheduling@mismo.org</b></td><td>What came in, how much became requests, and how often the Scheduler had to stop for a person.</td></tr></tbody></table>'; } },
   { id: 'hand', k: '#9fb3c8', t: 'Running One by Hand', h: function () { return '<h2>Running a Request Yourself</h2><p class="lead">Any request can be run by hand, and any request you start by hand can be given to the Scheduler.</p>' +
     HELP_STEPS([['Start a Request', 'Press Start a Request in the banner. Paste the email and press Read it for me, or fill it in.'], ['Pick Times', 'A calendar shows when the MISMO people are free in Outlook. Click the times to offer.'], ['Send the Poll', 'Each guest gets the same branded poll email from scheduling@mismo.org, with their own link.'], ['Book', 'Press Book under the time that works. Then send the invite and, if you like, Draft the confirmation email.']]) +
     '<ul><li><b>Take Over</b> on an automatic request stops the Scheduler emailing about it; you carry on by hand.</li><li><b>Let the Scheduler Handle It</b> (or <b>Hand Back to the Scheduler</b> on a Needs a Look) gives it back. It picks up within a few minutes.</li><li>Requests run by hand show in <b>Follow Up</b> when a guest is due a nudge, and add a follow-up task to the organizer’s Team HQ board.</li></ul>'; } },
@@ -3052,7 +3136,7 @@ var HELP = [
     '<tr><td><b>Needs a Look</b></td><td>Vanessa, Jonna copied</td><td>When the Scheduler stops on a request.</td></tr>' +
     '<tr><td><b>Reply About …</b></td><td>Vanessa, Jonna copied</td><td>When someone replies to a Scheduler email.</td></tr></tbody></table>' +
     '<p class="lead">Every email the Scheduler sent for a request is listed on that request, with whether it went out.</p>'; } },
-  { id: 'look', k: '#f0b94a', t: 'When It Stops', h: function () { return '<h2>Needs a Look</h2><p class="lead">The Scheduler stops and emails Vanessa, with Jonna copied, rather than guess. The request shows the reason at the top.</p>' +
+  { id: 'look', k: '#f0b94a', t: 'When It Stops', h: function () { return '<h2>Needs a Look</h2><p class="lead">The Scheduler stops and emails Vanessa, with Jonna copied, rather than guess. The request shows the reason at the top. If no time can be found, press <b>Close as Couldn’t Schedule</b>: it moves to the Couldn’t Schedule list on the Dashboard for reference.</p>' +
     '<table><thead><tr><th>Why it stopped</th><th>What to do</th></tr></thead><tbody>' +
     '<tr><td>The email doesn’t say who from MISMO should be in the meeting</td><td>Edit details, tick the MISMO people, then Hand Back to the Scheduler.</td></tr>' +
     '<tr><td>The person who asked isn’t on the guest list</td><td>Edit details and add them as a guest, then hand it back.</td></tr>' +
@@ -3081,6 +3165,178 @@ var HELP = [
     ['What if a guest says none of the times work?', 'Those times come off, new ones are added, and the guest is told. After three sets, a person takes over.'],
     ['Is anyone’s calendar shown to guests?', 'No. Guests only see times when everyone from MISMO is free. Meeting names never leave Outlook.']]); } }
 ];
+/* ---------------- Statistics ---------------- */
+var STAT_RANGES = [['30', 'Last 30 Days'], ['90', 'Last 90 Days'], ['year', 'This Year'], ['all', 'All Time']];
+function statFrom(k) {
+  var now = Date.now();
+  if (k === '30') return now - 30 * 864e5;
+  if (k === '90') return now - 90 * 864e5;
+  if (k === 'year') return at(todayISO(ET).slice(0, 4) + '-01-01', 0, ET);
+  return 0;
+}
+function dur(ms) {
+  if (ms == null || !isFinite(ms)) return '—';
+  var hr = ms / 36e5;
+  if (hr < 1) return Math.max(1, Math.round(ms / 6e4)) + ' min';
+  if (hr < 48) return (hr < 10 ? Math.round(hr * 10) / 10 : Math.round(hr)) + ' hrs';
+  return Math.round(hr / 24 * 10) / 10 + ' days';
+}
+function avg(a) { return a.length ? a.reduce(function (x, y) { return x + y; }, 0) / a.length : null; }
+function pctOf(n, d) { return d ? Math.round(100 * n / d) + '%' : '—'; }
+var STTIP = null;
+function stTip(node, text) {
+  node.setAttribute('aria-label', text); node.tabIndex = 0;
+  var show = function (x, y) { if (!STTIP) { STTIP = el('div', 'sttip'); document.body.appendChild(STTIP); } STTIP.textContent = text; STTIP.hidden = false; var w = STTIP.offsetWidth; STTIP.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, x + 12)) + 'px'; STTIP.style.top = (y + 16) + 'px'; };
+  var hide = function () { if (STTIP) STTIP.hidden = true; };
+  node.addEventListener('mousemove', function (e) { show(e.clientX, e.clientY); });
+  node.addEventListener('mouseleave', hide);
+  node.addEventListener('focus', function () { var r = node.getBoundingClientRect(); show(r.left, r.bottom - 10); });
+  node.addEventListener('blur', hide);
+}
+/* one bar split into parts, with the key underneath carrying every number */
+function mixPanel(title, hint, parts, empty) {
+  var pn = dashPanel(title, hint, '', null), tot = parts.reduce(function (a, x) { return a + x.v; }, 0);
+  if (!tot) { pn.p.appendChild(el('div', 'empty', empty)); return pn.p; }
+  var bar = el('div', 'mixbar'); bar.setAttribute('role', 'img');
+  bar.setAttribute('aria-label', title + ': ' + parts.map(function (x) { return x.t + ' ' + x.v; }).join(', '));
+  parts.forEach(function (x) { if (!x.v) return; var i = el('i'); i.style.flex = x.v + ' 1 0'; i.style.background = x.k; stTip(i, x.t + ': ' + x.v + ' (' + pctOf(x.v, tot) + ')'); bar.appendChild(i); });
+  var key = el('div', 'mixkey');
+  parts.forEach(function (x) { key.appendChild(el('div', null, '<i style="background:' + x.k + '"></i>' + esc(x.t) + '<b>' + x.v + '<em>' + pctOf(x.v, tot) + '</em></b>')); });
+  pn.p.appendChild(bar); pn.p.appendChild(key);
+  return pn.p;
+}
+/* one bar per name, longest first; the number sits beside each bar */
+function barsPanel(title, hint, rows, empty, note) {
+  var pn = dashPanel(title, hint, '', null);
+  if (!rows.length) { pn.p.appendChild(el('div', 'empty', empty)); return pn.p; }
+  var max = Math.max.apply(null, rows.map(function (r) { return r.v; })) || 1, box = el('div', 'hbars');
+  rows.forEach(function (r) {
+    var row = el('div', 'hbar', '<span class="t" title="' + esc(r.t) + '">' + esc(r.t) + '</span><span class="tr">' + (r.v ? '<i style="width:' + Math.max(1, 100 * r.v / max) + '%"></i>' : '') + '</span><b>' + r.v + (r.x ? ' <em>' + esc(r.x) + '</em>' : '') + '</b>');
+    stTip($('.tr', row), r.t + ': ' + (r.tip || r.v));
+    box.appendChild(row);
+  });
+  pn.p.appendChild(box);
+  if (note) pn.p.appendChild(el('div', 'small muted', note)).style.cssText = 'padding:0 16px 14px';
+  return pn.p;
+}
+function figsPanel(title, hint, rows) {
+  var pn = dashPanel(title, hint, '', null), f = el('div', 'figs');
+  rows.forEach(function (r) { var d = el('div', null, '<span>' + esc(r[0]) + '</span><b>' + esc(String(r[1])) + '</b>'); if (r[2]) d.title = r[2]; f.appendChild(d); });
+  pn.p.appendChild(f); return pn.p;
+}
+var FREEMAIL = /^(gmail|googlemail|yahoo|outlook|hotmail|live|icloud|me|aol|msn|proton|protonmail)\./;
+function orgOf(g) {
+  if (g.org && String(g.org).trim()) return String(g.org).trim();
+  var d = String(g.email || '').split('@')[1] || '';
+  if (!d) return 'Unknown';
+  return FREEMAIL.test(d) ? 'Personal email' : d;
+}
+function viewStats(app) {
+  var rk = STATE.statRange || lsGet('statRange', '90'), from = statFrom(rk), now = Date.now();
+  var rangeName = (STAT_RANGES.find(function (x) { return x[0] === rk; }) || STAT_RANGES[1])[1];
+  var head = el('div', 'stathead');
+  head.appendChild(el('div', null, '<h1>Statistics</h1><p>Requests started in the period, and what happened to them.</p>'));
+  head.appendChild(seg(STAT_RANGES, rk, function (v) { STATE.statRange = v; lsSet('statRange', v); render({ full: true }); }));
+  app.appendChild(head);
+
+  var reqs = allReqs().filter(function (r) { return (r.createdAt || 0) >= from; });
+  var booked = reqs.filter(function (r) { return r.status === 'booked'; });
+  var unsch = reqs.filter(couldntSchedule);
+  var cancelled = reqs.filter(function (r) { return r.status === 'cancelled' && !couldntSchedule(r); });
+  var open = reqs.filter(function (r) { return r.status !== 'booked' && r.status !== 'cancelled'; });
+  var upcoming = booked.filter(function (r) { return !isPast(r); }).length;
+  var toBook = booked.filter(function (r) { return r.bookedAt && r.createdAt; }).map(function (r) { return r.bookedAt - r.createdAt; });
+  var guests = [], replies = [], reminders = 0, afterReminder = 0;
+  reqs.forEach(function (r) { (r.guests || []).forEach(function (g) {
+    if (!g.sentAt) return; guests.push(g); reminders += (g.reminders || []).length + (g.followUps || []).length;
+    if (g.answer && g.answer.at) { replies.push(Math.max(0, g.answer.at - g.sentAt)); if ((g.reminders || []).concat(g.followUps || []).some(function (t) { return t < g.answer.at; })) afterReminder++; }
+  }); });
+  var answered = guests.filter(function (g) { return g.answer; }).length;
+  var auto = booked.filter(function (r) { return r.robot && r.robot.auto; }).length;
+
+  /* ---- the six figures ---- */
+  var tiles = el('div', 'stiles');
+  [['var(--c1)', 'Requests', reqs.length, rangeName.toLowerCase()],
+   ['var(--c3)', 'Booked', booked.length, pctOf(booked.length, reqs.length - cancelled.length) + ' of requests · ' + upcoming + ' still ahead'],
+   ['var(--c2)', 'Couldn’t Schedule', unsch.length, pctOf(unsch.length, reqs.length - cancelled.length) + ' of requests'],
+   ['var(--c4)', 'In Progress', open.length, open.filter(needsYou).length + ' need you'],
+   ['var(--c1)', 'Time to Book', dur(avg(toBook)), 'on average, request to booked'],
+   ['var(--c3)', 'Guest Reply Time', dur(avg(replies)), 'on average, poll to answer']
+  ].forEach(function (t) { var d = el('div', 'stile', '<small>' + esc(t[1]) + '</small><b>' + esc(String(t[2])) + '</b><span>' + esc(t[3]) + '</span>'); d.style.setProperty('--k', t[0]); tiles.appendChild(d); });
+  app.appendChild(tiles);
+
+  /* three rows of two, so each pair lines up and no column runs short */
+  var L, R, row = function () { var g = el('div', 'hgrid stgrid'); L = el('div', 'hside'); R = el('div', 'hside'); g.appendChild(L); g.appendChild(R); app.appendChild(g); };
+  row();
+
+  /* ---- where requests ended up ---- */
+  L.appendChild(mixPanel('Where Requests Ended Up', plural(reqs.length, 'request', 'requests'), [
+    { t: 'Booked', v: booked.length, k: 'var(--c1)' }, { t: 'Couldn’t Schedule', v: unsch.length, k: 'var(--c2)' },
+    { t: 'In Progress', v: open.length, k: 'var(--c3)' }, { t: 'Cancelled', v: cancelled.length, k: 'var(--c4)' }
+  ], 'No requests started in this period.'));
+
+  /* ---- how the booked ones got booked ---- */
+  var how = { matched: 0, poll1: 0, pollMore: 0, hand: 0 };
+  booked.forEach(function (r) {
+    var R0 = r.robot || {};
+    if (!R0.auto) how.hand++;
+    else if (!(r.guests || []).some(function (g) { return g.sentAt; })) how.matched++;
+    else if ((R0.round || 1) > 1) how.pollMore++;
+    else how.poll1++;
+  });
+  R.appendChild(mixPanel('How Meetings Got Booked', auto ? pctOf(auto, booked.length) + ' automatic' : '', [
+    { t: 'Their times worked', v: how.matched, k: 'var(--c1)' }, { t: 'Poll, first set of times', v: how.poll1, k: 'var(--c2)' },
+    { t: 'Poll, more times needed', v: how.pollMore, k: 'var(--c3)' }, { t: 'Booked by hand', v: how.hand, k: 'var(--c4)' }
+  ], 'Nothing booked in this period yet.'));
+
+  row();
+  /* ---- polls (bottom row, left) ---- */
+  var approvals = reqs.filter(function (r) { return r.robot && r.robot.approved && r.robot.proposed && r.robot.approved.at && r.robot.proposed.at; }).map(function (r) { return Math.max(0, r.robot.approved.at - r.robot.proposed.at); });
+  var pollsP = figsPanel('Polls and Approvals', '', [
+    ['Polls sent', reqs.filter(function (r) { return (r.guests || []).some(function (g) { return g.sentAt; }); }).length],
+    ['Guests asked', guests.length],
+    ['Guests who answered', answered + ' (' + pctOf(answered, guests.length) + ')'],
+    ['Reminders sent', reminders],
+    ['Answered after a reminder', afterReminder],
+    ['Average reply time', dur(avg(replies))],
+    ['Times approved', approvals.length],
+    ['Average wait for approval', dur(avg(approvals)), 'From the Scheduler finding a time to Vanessa or Jonna approving it']
+  ]);
+
+  /* ---- MISMO people ---- */
+  var ppl = TEAM.people.map(function (pp) {
+    var inReq = reqs.filter(function (r) { return (r.internal || []).indexOf(pp.id) >= 0; });
+    var b = inReq.filter(function (r) { return r.status === 'booked'; }).length;
+    return { t: pp.name, v: b, x: 'of ' + inReq.length, tip: b + ' booked of ' + inReq.length + ' requests' , n: inReq.length };
+  }).filter(function (x) { return x.n; }).sort(function (a, b) { return b.v - a.v || b.n - a.n; });
+  L.appendChild(barsPanel('MISMO People in Meetings', 'booked of requested', ppl, 'No MISMO people on requests in this period.'));
+
+  /* ---- organizations ---- */
+  var orgs = {};
+  reqs.forEach(function (r) { var seen = {}; (r.guests || []).forEach(function (g) { var o = orgOf(g); if (seen[o]) return; seen[o] = 1; orgs[o] = orgs[o] || { t: o, v: 0, b: 0 }; orgs[o].v++; if (r.status === 'booked') orgs[o].b++; }); });
+  var orgRows = Object.keys(orgs).map(function (k) { var o = orgs[k]; return { t: o.t, v: o.v, x: o.b + ' booked', tip: o.v + ' requests, ' + o.b + ' booked' }; }).sort(function (a, b) { return b.v - a.v || a.t.localeCompare(b.t); });
+  var more = orgRows.length > 8 ? orgRows.length - 8 : 0;
+  R.appendChild(barsPanel('Organizations', 'requests', orgRows.slice(0, 8), 'No outside guests on requests in this period.', more ? '+ ' + plural(more, 'more organization', 'more organizations') + '. Search finds any of them by name.' : ''));
+
+  row(); L.appendChild(pollsP);
+  /* ---- email intake ---- */
+  var mail = inboxItems().filter(function (x) { return (x.receivedAt || 0) >= from; });
+  var became = mail.filter(function (x) { return x.status === 'started' || allReqs().some(function (r) { return r.inboxId === x.id; }); }).length;
+  var robotMade = reqs.filter(function (r) { return r.createdBy === 'Scheduler' || (r.robot && r.robot.auto && r.robot.readBy); });
+  var byClaude = robotMade.filter(function (r) { return r.robot && r.robot.readBy === 'claude'; }).length;
+  var stopped = reqs.filter(function (r) { return r.robot && (r.robot.stage === 'person' || r.robot.why); }).length;
+  R.appendChild(figsPanel('Email to scheduling@mismo.org', '', [
+    ['Emails received', mail.length],
+    ['Became requests', became + ' (' + pctOf(became, mail.length) + ')'],
+    ['Set aside', mail.filter(function (x) { return x.status === 'dismissed'; }).length],
+    ['Started by the Scheduler', robotMade.length],
+    ['Read by Claude', byClaude + ' (' + pctOf(byClaude, robotMade.length) + ')'],
+    ['Stopped for a person', stopped],
+    ['Asked by MISMO staff', reqs.filter(function (r) { return /@mismo\.org$/i.test(r.askedByEmail || ''); }).length],
+    ['Asked by outside people', reqs.filter(function (r) { return r.askedByEmail && !/@mismo\.org$/i.test(r.askedByEmail); }).length]
+  ]));
+}
+
 function viewHelp(app) {
   var head = el('div', 'pagehead'); head.innerHTML = '<div class="grow"><h1>Help</h1><p>How the Scheduler works, step by step. Questions: Jonna Critchley.</p></div>';
   app.appendChild(head);
@@ -3146,7 +3402,19 @@ function previewRequests() {
     robot: { auto: true, stage: 'approve', readBy: 'claude', acked: now - 40 * 6e4, requester: { name: 'Morgan Lee', email: 'morgan.lee@example.com' }, offered: [{ s: apS - 60 * M, e: apS + 60 * M }],
       proposed: { id: 'p0', s: apS, e: apS + 30 * M, how: 'one of the times Morgan Lee offered, and everyone from MISMO is free', at: now - 40 * 6e4 } },
     log: [{ at: now - 40 * 6e4, by: 'Scheduler', what: 'Found a time — waiting for approval' }], updatedAt: now - 40 * 6e4 };
-  return [ap, au, lk, vq, sd, ex];
+  var fuS = etAt(bizDaysAhead(6)[5], '13:00');
+  var fu = { id: 'fu6h1j3k5m', title: 'Sample: eMortgage Roundtable Prep (made up)', purpose: 'A made-up booked meeting that’s still ahead.', duration: 30, where: 'Zoom', followDays: 2,
+    owner: 'vrios@mismo.org', ownerName: 'Vanessa Rios', askedBy: 'Taylor Brooks', askedByEmail: 'taylor.brooks@example.com', createdAt: now - 5 * 864e5, createdBy: 'Scheduler', internal: ['amy', 'jonna'],
+    slots: [{ id: 'f0', s: fuS, e: fuS + 30 * M }], guests: [{ id: 'g8', code: 'preview-taylor', name: 'Taylor Brooks', email: 'taylor.brooks@example.com', org: 'Example Lending' }],
+    status: 'booked', chosen: 'f0', bookedAt: now - 4 * 864e5, robot: { auto: true, stage: 'booked', readBy: 'claude', requester: { name: 'Taylor Brooks', email: 'taylor.brooks@example.com' }, offered: [] },
+    log: [{ at: now - 4 * 864e5, by: 'Scheduler', what: 'Booked after Jonna approved' }], updatedAt: now - 4 * 864e5 };
+  var un = { id: 'un9p2r4t6v', title: 'Sample: Vendor Intro, Example Tech (made up)', purpose: 'A made-up request we tried and couldn’t schedule.', duration: 30, where: 'Zoom', followDays: 2,
+    owner: 'vrios@mismo.org', ownerName: 'Vanessa Rios', askedBy: 'Drew Patel', askedByEmail: 'drew.patel@example.com', createdAt: now - 12 * 864e5, createdBy: 'Scheduler', internal: ['brian'], slots: [],
+    guests: [{ id: 'g9', code: 'preview-drew', name: 'Drew Patel', email: 'drew.patel@example.com', org: 'Example Tech' }],
+    status: 'cancelled', closed: 'unscheduled', closedAt: now - 2 * 864e5, closedBy: 'Vanessa Rios',
+    robot: { auto: true, stage: 'person', round: 3, why: 'three sets of times went out and none worked for everyone', readBy: 'claude', requester: { name: 'Drew Patel', email: 'drew.patel@example.com' }, offered: [] },
+    log: [{ at: now - 2 * 864e5, by: 'Vanessa Rios', what: 'Closed: couldn’t schedule' }], updatedAt: now - 2 * 864e5 };
+  return [ap, au, lk, vq, sd, ex, fu, un];
 }
 function previewSent() {
   var now = Date.now();
@@ -3249,6 +3517,13 @@ if (PREVIEW) {
 window.__sched = {
   go: function(t, id){ return go(t, id); },
   allReqs: function(){ try { return allReqs(); } catch(e){ return []; } },
+  /* what the search shows and matches for one request */
+  about: function(r){ try {
+    var lab = couldntSchedule(r) ? PHASE.unscheduled.n : isPast(r) ? 'Past meeting' : (PHASE[phase(r)] || {}).n || '';
+    var s = bookedSlot(r), when = s ? slotLabel(s, VIEW_TZ, true) : '';
+    var staffN = (r.internal || []).map(function (id) { var x = person(id); return x ? x.name : id; });
+    return { label: lab, when: when, staff: staffN };
+  } catch(e){ return { label: '', when: '', staff: [] }; } },
   get INBOX(){ try { return INBOX; } catch(e){ return null; } },
   get STATE(){ try { return STATE; } catch(e){ return null; } }
 };
@@ -3340,36 +3615,47 @@ Object.defineProperty(window,'INBOX',{get:function(){return window.__sched.INBOX
     const out=[];
     const score=(name)=>{ const n=norm(name); return n===t ? 3 : n.indexOf(t)===0 ? 2 : n.indexOf(t)>=0 ? 1 : 0; };
     const push=(group,name,where,go)=>{ if(out.length<60) out.push({group,name,where,go,s:score(name)}); };
-    /* meeting requests, by title, organizer or status */
+    /* every word typed has to appear somewhere, so "kelly booked" or "example lending" both work */
+    const words=t.split(' ').filter(Boolean);
+    const hit=(hay)=>{ const x=norm(hay); return words.every(w=>x.indexOf(w)>=0); };
+    const reqs=(window.allReqs ? window.allReqs() : []);
+    const about=(r)=>(window.__sched && window.__sched.about) ? window.__sched.about(r) : { label:'', when:'', staff:[] };
+    /* meeting requests: title, who asked, who's in it (MISMO and outside), companies, emails, subject, purpose, status, booked time */
     try{
-      (window.allReqs ? window.allReqs() : []).forEach(r=>{
-        const nm=r.title||'Untitled meeting';
-        if(norm(nm).indexOf(t)<0 && norm(r.ownerName).indexOf(t)<0) return;
-        push('Requests', nm, [r.ownerName, r.status||'open'].filter(Boolean).join(' · '),
+      reqs.forEach(r=>{
+        const a=about(r), rq=(r.robot&&r.robot.requester)||{};
+        const subj=(/^Subject:\s*(.*)$/m.exec(r.source||'')||[])[1]||'';
+        const hay=[r.title, r.ownerName, r.purpose, r.askedBy, r.askedByEmail, rq.name, rq.email, r.where, subj, a.label, a.when, a.staff.join(' '),
+          (r.guests||[]).map(g=>[g.name,g.email,g.org].join(' ')).join(' ')].join(' ');
+        if(!hit(hay)) return;
+        const who=a.staff.map(n=>n.split(' ')[0]).concat((r.guests||[]).map(g=>g.name||g.email)).slice(0,4).join(', ');
+        push('Requests', r.title||'Untitled meeting', [a.label, a.when, who].filter(Boolean).join(' · '),
              ()=>{ window.go && window.go('list', r.id); });
       });
     }catch(e){}
-    /* the people invited to them */
+    /* outside guests, by name, email or company */
     try{
       const seen={};
-      (window.allReqs ? window.allReqs() : []).forEach(r=>{
+      reqs.forEach(r=>{
         (r.guests||[]).forEach(g=>{
-          const nm=g.name||g.email||''; if(!nm || norm(nm).indexOf(t)<0 && norm(g.org).indexOf(t)<0) return;
+          const nm=g.name||g.email||''; if(!nm || !hit([g.name,g.email,g.org].join(' '))) return;
           const key=norm(nm)+'|'+norm(r.id); if(seen[key]) return; seen[key]=1;
           push('People', nm, [g.org, r.title].filter(Boolean).join(' · '),
                ()=>{ window.go && window.go('list', r.id); });
         });
       });
     }catch(e){}
-    /* email waiting in Incoming */
+    /* emails that reached scheduling@mismo.org: subject, sender, who else was on it, and the text */
     try{
       const d=(window.INBOX && window.INBOX.server && window.INBOX.server.docs)||{};
       Object.keys(d).forEach(k=>{
         const m=d[k]; const nm=m.subject||'(no subject)';
-        if(norm(nm).indexOf(t)<0 && norm(m.from).indexOf(t)<0 && norm(m.fromName).indexOf(t)<0) return;
-        push('Incoming', nm, m.fromName||m.from||'', ()=>{ window.go && window.go('inbox'); });
+        if(!hit([m.subject,m.from,m.fromName,m.to,m.cc,m.body].join(' '))) return;
+        push('Incoming', nm, [m.fromName||m.from||'', m.receivedAt ? new Date(m.receivedAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : ''].filter(Boolean).join(' · '),
+             ()=>{ const r=reqs.find(x=>x.inboxId===m.id); if(r) window.go && window.go('list', r.id); else window.go && window.go('inbox'); });
       });
     }catch(e){}
+    out.sort((x,y)=>(x.group===y.group ? y.s-x.s : 0));
     return out;
   }
   /* Hotel Specs and People have no rail button of their own any more — the shell
@@ -3452,7 +3738,7 @@ Object.defineProperty(window,'INBOX',{get:function(){return window.__sched.INBOX
 
 /* --- rail buttons drive the page's own router --- */
 (function railroute(){
-  var RAIL_TABS=['dash','help'];
+  var RAIL_TABS=['dash','stats','help'];
   function mark(tab){
     document.querySelectorAll('.rail nav button[data-hq], #help-btn[data-hq]').forEach(function(b){
       if(b.getAttribute('data-hq')===tab) b.setAttribute('aria-current','page');
@@ -3461,7 +3747,7 @@ Object.defineProperty(window,'INBOX',{get:function(){return window.__sched.INBOX
   }
   function open(tab){
     if(window.go) window.go(tab);
-    mark(tab === 'help' ? 'help' : 'dash');
+    mark(RAIL_TABS.indexOf(tab) >= 0 ? tab : 'dash');
   }
   document.addEventListener('click',function(e){
     var b=e.target.closest && e.target.closest('[data-hq]');
@@ -3472,7 +3758,7 @@ Object.defineProperty(window,'INBOX',{get:function(){return window.__sched.INBOX
   window.addEventListener('popstate',function(){ sync(); });
   function sync(){
     var s=window.__sched && window.__sched.STATE;
-    if(s && s.tab) mark(s.tab === 'help' ? 'help' : 'dash');
+    if(s && s.tab) mark(RAIL_TABS.indexOf(s.tab) >= 0 ? s.tab : 'dash');
   }
   setTimeout(sync,0);
   setInterval(counts, 1200);
