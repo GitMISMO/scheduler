@@ -1297,7 +1297,27 @@ function guestState(req, g) {
 function isAuto(req) { return !!(req && req.robot && req.robot.auto && req.robot.stage !== 'person'); }
 function needsLook(req) { return !!(req && req.robot && req.robot.auto && req.robot.stage === 'person' && req.status !== 'booked' && req.status !== 'cancelled'); }
 function awaitingApproval(req) { return !!(req && req.robot && req.robot.auto && req.robot.stage === 'approve' && req.robot.proposed && !req.robot.approved && req.status !== 'booked' && req.status !== 'cancelled'); }
-function needsYou(req) { return needsLook(req) || awaitingApproval(req); }
+/* warm follow-ups the Scheduler sends a guest who hasn't answered: a week after the poll, then weekly, three at most (same rule as robot/logic.mjs) */
+var FOLLOW_EVERY = 7 * 864e5, FOLLOW_MAX = 3;
+function followOf(req, g) {
+  var R = req.robot || {}, restart = R.followRestartAt && R.followRestartAt > (g.sentAt || 0) ? R.followRestartAt : 0, since = restart || g.sentAt || 0;
+  var mine = (g.reminders || []).filter(function (t) { return t >= since; }).sort(function (a, b) { return a - b; });
+  var last = mine.length ? mine[mine.length - 1] : (restart ? restart - FOLLOW_EVERY : since);
+  return { sent: mine.length, next: last + FOLLOW_EVERY };
+}
+function followWaiting(req) { return (req.guests || []).filter(function (g) { return g.sentAt && !g.answer && !g.gone; }); }
+function followsFinished(req) { var R = req.robot || {}; return isAuto(req) && R.stage === 'polling' && !!R.followDone && !R.followStop && req.status !== 'booked' && req.status !== 'cancelled' && followWaiting(req).length > 0; }
+function startFollows(req) {
+  var fresh = followWaiting(req).some(function (g) { return followOf(req, g).sent >= FOLLOW_MAX; }), r = clone(req);
+  r.robotEdit = fresh ? { followRestartAt: Date.now(), followStop: null, followDone: 0 } : { followStop: null, followDone: 0 };
+  put(r, fresh ? 'Started follow-ups again' : 'Turned follow-ups back on');
+  toast(fresh ? 'Follow-ups started again: the first goes out within a couple of hours, then one a week, three in all.' : 'Follow-ups are back on.');
+}
+function stopFollows(req) {
+  var r = clone(req); r.robotEdit = { followStop: { by: me().name, at: Date.now() }, followDone: 0 };
+  put(r, 'Stopped follow-ups'); toast('Follow-ups stopped. The poll stays open.');
+}
+function needsYou(req) { return needsLook(req) || awaitingApproval(req) || followsFinished(req); }
 /* Vanessa or Jonna approve a time before anyone outside MISMO is told it's booked */
 var APPROVERS = ['vrios', 'jcritchley'];
 function canApprove() { return PREVIEW || (canEdit() && APPROVERS.indexOf(avKey(me().email)) >= 0); }
@@ -1306,7 +1326,7 @@ function approveSlot(req, sl) {
   var r = clone(req); r.robotEdit = { approved: { id: sl.id, by: me().name, at: Date.now() } };
   if (!(r.slots || []).some(function (x) { return x.id === sl.id; })) r.slots = (r.slots || []).concat({ id: sl.id, s: sl.s, e: sl.e, added: Date.now() });
   put(r, 'Approved ' + slotLabel(sl, ET, true));
-  toast('Approved. The confirmation goes out from scheduling@mismo.org within a few minutes.');
+  toast('Approved. The confirmation and calendar invite go out from scheduling@mismo.org within a few minutes.');
 }
 function phase(req) {
   if (req.status === 'cancelled') return 'cancelled';
@@ -1714,7 +1734,7 @@ function viewList(app) {
     if (STATE.listShow === 'booked') return ph === 'booked' && !isPast(r);
     if (STATE.listShow === 'past') return isPast(r);
     if (STATE.listShow === 'unscheduled') return couldntSchedule(r);
-    if (STATE.listShow === 'look') return ph === 'look' || ph === 'approve';
+    if (STATE.listShow === 'look') return needsYou(r);
     return true;
   }).sort(function (a, b) {
     var sa = bookedSlot(a), sb = bookedSlot(b);
@@ -1947,8 +1967,15 @@ function viewDetail(app, req) {
     var sl = slotById(req, req.chosen);
     var bk = el('div', 'booked');
     bk.innerHTML = '<div style="flex:1 1 280px"><div class="small muted">Booked for</div><div class="when">' + esc(sl ? slotLabel(sl, VIEW_TZ, true) : 'a time no longer listed') + '</div>' + (sl && VIEW_TZ !== ET ? '<div class="small muted">' + esc(slotLabel(sl, ET, true)) + '</div>' : '') + '</div>';
-    var ba = el('div', 'grow-row');
-    if (sl) {
+    var ba = el('div', 'grow-row'), inv = (req.robot && req.robot.invite) || null, zm = inv && inv.zoom;
+    if (inv) {
+      var it = inv.state === 'sent' ? '<b>Calendar invite sent</b> from scheduling@mismo.org' + (inv.at ? ' ' + esc(whenAgo(inv.at)) : '') + '.'
+        : inv.state === 'failed' ? '<b>The invite couldn’t be sent automatically</b> (' + esc(String(inv.lastErr || '').slice(0, 120)) + '). Send it with the button.'
+        : '<b>Sending the calendar invite…</b> It goes out from scheduling@mismo.org within a few minutes.';
+      if (zm && zm.joinUrl) it += '<br>Zoom: <a href="' + esc(zm.joinUrl) + '" target="_blank" rel="noopener">' + esc(zm.joinUrl.replace(/\?.*$/, '')) + '</a>' + (zm.passcode ? ' · passcode ' + esc(zm.passcode) : '');
+      $('div', bk).appendChild(el('div', 'small', it)).style.marginTop = '8px';
+    }
+    if (sl && (!inv || inv.state === 'failed')) {
       ba.appendChild(btn('Create the invite in Outlook', '', function () { window.open(owaInvite(req, sl), '_blank', 'noopener'); }, 'cal'));
       ba.appendChild(btn('Download invite file', 'ghost', function () { downloadIcs(req, sl); }, 'down'));
     }
@@ -1990,7 +2017,7 @@ function viewDetail(app, req) {
     (req.guests || []).forEach(function (g) {
       var st = guestState(req, g), tr = el('tr');
       var auto = isAuto(req), nRem = (g.reminders || []).length;
-      var stTxt = auto && (st === 'waiting' || st === 'due') ? '<span class="pill p-wait">Poll sent ' + esc(fmtDay(g.sentAt, VIEW_TZ)) + (nRem ? ' · reminded ' + nRem + (nRem === 1 ? ' time' : ' times') : '') + '</span>'
+      var stTxt = auto && (st === 'waiting' || st === 'due') ? '<span class="pill p-wait">Poll sent ' + esc(fmtDay(g.sentAt, VIEW_TZ)) + (nRem ? ' · ' + nRem + (nRem === 1 ? ' follow-up' : ' follow-ups') : '') + '</span>'
         : auto && st === 'unsent' ? '<span class="pill p-draft">Poll going out</span>'
         : st === 'answered' ? '<span class="pill p-yes">Answered ' + esc(fmtDay(g.answer.at || Date.now(), VIEW_TZ)) + (g.answer.via === 'manual' ? ' (entered by hand)' : '') + '</span>' + (g.answer.note ? '<div class="small muted" style="margin-top:4px">“' + esc(g.answer.note) + '”</div>' : '')
         : st === 'unsent' ? '<span class="pill p-draft">Not asked yet</span>'
@@ -2064,7 +2091,7 @@ function robotPanel(req, editable) {
     else apa.appendChild(el('span', 'small muted', 'Vanessa or Jonna approves this.'));
     apb.appendChild(apa); b.appendChild(apb);
   }
-  if (R.approved && R.stage === 'approve') b.appendChild(el('div', 'notice', '<b>Approved by ' + esc(R.approved.by || 'staff') + '.</b> The confirmation goes out within a few minutes.'));
+  if (R.approved && R.stage === 'approve') b.appendChild(el('div', 'notice', '<b>Approved by ' + esc(R.approved.by || 'staff') + '.</b> The confirmation and calendar invite go out within a few minutes.'));
   if (look) { var lk = el('div', 'notice bad', '<b>The Scheduler stopped because ' + esc(R.why || 'it needs a person') + '.</b> Fix what’s needed (for example <b>Edit details</b> to add who should attend), then hand it back, or take it from here yourself. If there’s no time that works, close it as Couldn’t Schedule. '); if (editable) { var lkb = el('button', 'linkbtn', 'Close as Couldn’t Schedule'); lkb.type = 'button'; lkb.onclick = function () { closeUnscheduled(req); }; lk.appendChild(lkb); } b.appendChild(lk); }
   if (R.replyAt) b.appendChild(el('div', 'notice', '<b>' + esc(R.replyFrom || 'Someone') + ' replied by email ' + esc(whenAgo(R.replyAt)) + ':</b> “' + esc(R.replySnippet || '') + '”'));
   var rq = R.requester || {};
@@ -2076,6 +2103,25 @@ function robotPanel(req, editable) {
     '<div><small>Times on Offer Now</small><b>' + (req.status === 'booked' ? 'Booked' : live) + '</b>' + ((R.dropped || []).length ? '<span class="small muted">' + R.dropped.length + ' taken off</span>' : '') + '</div>' +
     '<div><small>Read By</small><b>' + (R.readBy === 'claude' ? 'Claude' : R.readBy === 'checked' ? 'Checked by staff' : 'Plain reader') + '</b></div>';
   b.appendChild(f);
+  /* follow-ups to guests who haven't answered */
+  var fw = followWaiting(req);
+  if (R.auto && R.stage === 'polling' && req.status !== 'booked' && req.status !== 'cancelled' && fw.length) {
+    var fb = el('div', 'notice' + (followsFinished(req) ? ' warn' : ''));
+    var lines = fw.map(function (g) {
+      var s = followOf(req, g), nm = esc(g.name || g.email);
+      if (R.followStop) return nm + ': ' + s.sent + ' of ' + FOLLOW_MAX + ' sent, stopped';
+      if (s.sent >= FOLLOW_MAX) return nm + ': all ' + FOLLOW_MAX + ' sent, no answer yet';
+      return nm + ': ' + s.sent + ' of ' + FOLLOW_MAX + ' sent · next ' + esc(fmtDay(Math.max(s.next, Date.now()), VIEW_TZ));
+    });
+    fb.innerHTML = '<b>' + (followsFinished(req) ? 'Three follow-ups went out with no answer. Start them again, or leave them stopped.' : R.followStop ? 'Follow-ups are stopped' + (R.followStop.by ? ' (' + esc(first(R.followStop.by)) + ')' : '') + '.' : 'Friendly follow-ups go out a week apart, three at most.') + '</b><br>' + lines.join('<br>');
+    if (editable) {
+      var fa = el('div', 'grow-row'); fa.style.marginTop = '10px';
+      if (R.followStop || followsFinished(req)) fa.appendChild(btn('Start Follow-Ups Again', 'sm', function () { startFollows(req); }));
+      if (!R.followStop) fa.appendChild(btn(followsFinished(req) ? 'Leave Them Stopped' : 'Stop Follow-Ups', 'ghost sm', function () { stopFollows(req); }));
+      fb.appendChild(fa);
+    }
+    b.appendChild(fb);
+  }
   if ((R.dropped || []).length) {
     b.appendChild(el('div', 'small muted', 'Times taken off the poll, newest first'));
     var ul = el('ul', 'log'); R.dropped.slice().reverse().slice(0, 6).forEach(function (d) { ul.appendChild(el('li', null, '<span>' + esc(slotLabel(d, VIEW_TZ)) + '</span><span>' + esc(d.why) + '</span>')); });
@@ -2897,7 +2943,7 @@ function plural(n, a, b) { return n + ' ' + (n === 1 ? a : b); }
 function shortAgo(t) { var m = Math.round((Date.now() - t) / 60000); if (m < 1) return 'just now'; if (m < 60) return m + ' min ago'; var h = Math.round(m / 60); if (h < 24) return h + (h === 1 ? ' hour ago' : ' hours ago'); return new Date(t).toLocaleDateString('en-US', { timeZone: VIEW_TZ, month: 'short', day: 'numeric' }); }
 function viewDash(app) {
   var now = Date.now(), all = allReqs(), weekAgo = now - 7 * 864e5;
-  var approvals = all.filter(awaitingApproval), looks = all.filter(needsLook), due = followList(true).filter(function (x) { return x.st === 'due'; });
+  var approvals = all.filter(awaitingApproval), looks = all.filter(function (r) { return needsLook(r) || followsFinished(r); }), due = followList(true).filter(function (x) { return x.st === 'due'; });
   var open = all.filter(function (r) { var ph = phase(r); return ph !== 'booked' && ph !== 'cancelled'; });
   var polls = open.filter(function (r) { var ph = phase(r); return ph === 'collecting' || ph === 'ready'; });
   var booked = all.filter(function (r) { return r.status === 'booked'; });
@@ -2968,6 +3014,11 @@ function viewDash(app) {
     nd.rows.appendChild(dashRow({ k: '#ff8f7d', nm: r.title || 'Meeting request', small: 'Approve ' + slotLabel(P, VIEW_TZ, true), wh: P.how || '', age: 'Waiting ' + shortAgo(P.at || r.updatedAt || now).replace(' ago', ''), ageCls: 'late', acts: acts, go: function () { go(null, r.id); } }));
   });
   looks.forEach(function (r) {
+    if (followsFinished(r)) {
+      var fa = canEdit() ? [btn('Start Again', 'sm', function () { startFollows(r); })] : [];
+      nd.rows.appendChild(dashRow({ k: '#f0b94a', nm: r.title || 'Meeting request', small: 'Three follow-ups, no answer from ' + followWaiting(r).map(function (g) { return g.name || g.email; }).join(', '), wh: '', age: 'Follow-ups done', ageCls: 'wait', acts: fa, go: function () { go(null, r.id); } }));
+      return;
+    }
     nd.rows.appendChild(dashRow({ k: '#f0b94a', nm: r.title || 'Meeting request', small: 'Stopped because ' + (r.robot.why || 'it needs a person'), wh: (r.robot.requester && (r.robot.requester.name || r.robot.requester.email)) || '', age: 'Needs a look', ageCls: 'wait', go: function () { go(null, r.id); } }));
   });
   due.forEach(function (x) {
@@ -2980,9 +3031,9 @@ function viewDash(app) {
   var pl = dashPanel('Polls Out', polls.length ? 'newest first' : '', 'All Requests', function () { STATE.listShow = 'active'; go('list'); });
   polls.slice().sort(function (a, b) { return (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0); }).slice(0, 6).forEach(function (r) {
     var gs = r.guests || [], ans = gs.filter(function (g) { return g.answer; }).length, live = (r.slots || []).filter(function (s) { return s.s > now; }).length;
-    var rem = gs.reduce(function (a, g) { return a + (g.reminders || []).length; }, 0);
+    var rem = followWaiting(r).reduce(function (a, g) { return Math.max(a, followOf(r, g).sent); }, 0);
     var who = (r.internal || []).map(function (id) { var p = person(id); return p ? first(p.name) : id; }).concat(gs.map(function (g) { return g.name || g.email; }));
-    pl.rows.appendChild(dashRow({ k: isAuto(r) ? '#74bfeb' : '#9fb3c8', nm: r.title || 'Meeting request', small: who.join(', '), wh: ans + ' of ' + gs.length + ' answered · ' + plural(live, 'time', 'times') + ' on offer', age: rem ? 'Reminded ' + rem + '×' : (isAuto(r) ? 'Automatic' : 'By hand'), ageCls: rem ? 'wait' : '', go: function () { go(null, r.id); } }));
+    pl.rows.appendChild(dashRow({ k: isAuto(r) ? '#74bfeb' : '#9fb3c8', nm: r.title || 'Meeting request', small: who.join(', '), wh: ans + ' of ' + gs.length + ' answered · ' + plural(live, 'time', 'times') + ' on offer', age: isAuto(r) && r.robot.followStop ? 'Follow-ups stopped' : rem ? 'Follow-up ' + rem + ' of ' + FOLLOW_MAX : (isAuto(r) ? 'Automatic' : 'By hand'), ageCls: rem ? 'wait' : '', go: function () { go(null, r.id); } }));
   });
   if (!polls.length) pl.p.appendChild(el('div', 'empty', 'No polls out. When a request needs guests to choose, its poll shows here with who has answered.'));
   L.appendChild(pl.p);
@@ -3086,7 +3137,7 @@ var HELP = [
   { id: 'flow', k: '#5fd39a', t: 'How a Request Flows', h: function () { return '<h2>From Email to Booked Meeting</h2><p class="lead">Every request moves through the same stages. Its stage shows as the colored tag on the request.</p>' +
     '<table><thead><tr><th>Stage</th><th>What is happening</th><th>What you do</th></tr></thead><tbody>' +
     '<tr><td><b>Working on It</b></td><td>The Scheduler has read the email and is checking Outlook.</td><td>Nothing.</td></tr>' +
-    '<tr><td><b>Waiting on Replies</b></td><td>A poll is out. Times come off when someone at MISMO gets busy or a guest says no; new times are added when fewer than two are left. Guests who haven’t answered get a reminder after two working days, twice.</td><td>Nothing. It shows under Polls Out on the Dashboard.</td></tr>' +
+    '<tr><td><b>Waiting on Replies</b></td><td>A poll is out. Times come off when someone at MISMO gets busy or a guest says no; new times are added when fewer than two are left. Guests who haven’t answered get a warm follow-up a week after the poll, then weekly, three at most.</td><td>Nothing. It shows under Polls Out on the Dashboard.</td></tr>' +
     '<tr><td><b>Waiting for Approval</b></td><td>A time works for everyone. It is held, so no other request can take it.</td><td>Approve it, or press Book under a different time.</td></tr>' +
     '<tr><td><b>Booked</b></td><td>Everyone has the confirmation.</td><td>The organizer sends the calendar invite with the Zoom link, using the button in the Booked email or on the request.</td></tr>' +
     '<tr><td><b>Needs a Look</b></td><td>The Scheduler stopped and told Vanessa why.</td><td>Fix what’s needed, then Hand Back to the Scheduler, or carry on by hand.</td></tr>' +
@@ -3102,7 +3153,7 @@ var HELP = [
     '<table><thead><tr><th>Part</th><th>What it shows</th></tr></thead><tbody>' +
     '<tr><td><b>The Banner</b></td><td>What needs you, polls out, and meetings booked this week. The ring shows how many of the last 30 days’ requests are booked.</td></tr>' +
     '<tr><td><b>Needs You</b></td><td>Times to approve, requests the Scheduler stopped on, and people to follow up with on requests run by hand.</td></tr>' +
-    '<tr><td><b>Polls Out</b></td><td>Every poll waiting on guests: who has answered, how many times are on offer, and reminders sent.</td></tr>' +
+    '<tr><td><b>Polls Out</b></td><td>Every poll waiting on guests: who has answered, how many times are on offer, and which follow-up they’re on.</td></tr>' +
     '<tr><td><b>Booked This Week</b></td><td>Meetings booked in the last seven days, automatic and by hand.</td></tr>' +
     '<tr><td><b>Emails This Week</b></td><td>Everything that reached scheduling@mismo.org, and how many became requests.</td></tr>' +
     '<tr><td><b>Scheduled</b></td><td>Every booked meeting still ahead, soonest first. This week’s are marked green.</td></tr>' +
@@ -3117,7 +3168,7 @@ var HELP = [
     '<tr><td><b>The Six Figures</b></td><td>Requests, Booked, Couldn’t Schedule, In Progress, the average time from request to booked, and how long guests take to answer a poll.</td></tr>' +
     '<tr><td><b>Where Requests Ended Up</b></td><td>The split between booked, couldn’t schedule, still in progress and cancelled.</td></tr>' +
     '<tr><td><b>How Meetings Got Booked</b></td><td>Whether the times the person offered worked straight away, the first poll did it, more times were needed, or it was booked by hand.</td></tr>' +
-    '<tr><td><b>Polls and Approvals</b></td><td>Guests asked and answered, reminders, reply times, and how long a found time waits for approval.</td></tr>' +
+    '<tr><td><b>Polls and Approvals</b></td><td>Guests asked and answered, follow-ups, reply times, and how long a found time waits for approval.</td></tr>' +
     '<tr><td><b>MISMO People in Meetings</b></td><td>For each person, meetings booked out of the requests they were on.</td></tr>' +
     '<tr><td><b>Organizations</b></td><td>The companies we schedule with most, from the guest’s company or email address.</td></tr>' +
     '<tr><td><b>Email to scheduling@mismo.org</b></td><td>What came in, how much became requests, and how often the Scheduler had to stop for a person.</td></tr></tbody></table>'; } },
@@ -3129,10 +3180,12 @@ var HELP = [
     '<tr><td><b>We’re Working on Your Meeting Request</b></td><td>The person who asked</td><td>Only when nothing else reaches them straight away, for example while a time waits for approval.</td></tr>' +
     '<tr><td><b>Finding a Time for …</b></td><td>Each outside guest, the person who asked copied</td><td>When a poll goes out.</td></tr>' +
     '<tr><td><b>New Times for …</b></td><td>Guests who already answered</td><td>When new times are added.</td></tr>' +
-    '<tr><td><b>Reminder: Finding a Time for …</b></td><td>A guest who hasn’t answered</td><td>After two working days, at most twice.</td></tr>' +
+    '<tr><td><b>Following Up / Still Hoping / One Last Note</b></td><td>A guest who hasn’t answered</td><td>Three warm follow-ups: a week after the poll, then a week apart. They stop when the guest answers, the meeting is booked, or you press Stop Follow-Ups.</td></tr>' +
+    '<tr><td><b>Follow-Ups Finished</b></td><td>Vanessa, Jonna copied</td><td>When the third follow-up goes with no answer. Start them again for three more, leave them stopped, or close the request as Couldn’t Schedule.</td></tr>' +
     '<tr><td><b>Approve a Time</b></td><td>Vanessa, Jonna copied</td><td>When a time works for everyone.</td></tr>' +
     '<tr><td><b>Confirmed: … on …</b></td><td>The guests and the person who asked, MISMO attendees copied</td><td>Once a time is approved.</td></tr>' +
-    '<tr><td><b>Booked, Send the Invite</b></td><td>Vanessa, Jonna copied</td><td>Once a time is approved, with the Outlook invite button.</td></tr>' +
+    '<tr><td><b>Calendar Invitation</b></td><td>Everyone in the meeting</td><td>Once a time is approved: an Outlook invitation from scheduling@mismo.org with a Zoom meeting made on the MISMO Zoom account.</td></tr>' +
+    '<tr><td><b>Booked and Invited</b></td><td>Vanessa, Jonna copied</td><td>Once the invitation has gone. (If it can’t go by itself, this is <b>Booked, Send the Invite</b> instead, with a button that opens it in Outlook.)</td></tr>' +
     '<tr><td><b>Needs a Look</b></td><td>Vanessa, Jonna copied</td><td>When the Scheduler stops on a request.</td></tr>' +
     '<tr><td><b>Reply About …</b></td><td>Vanessa, Jonna copied</td><td>When someone replies to a Scheduler email.</td></tr></tbody></table>' +
     '<p class="lead">Every email the Scheduler sent for a request is listed on that request, with whether it went out.</p>'; } },
@@ -3142,7 +3195,7 @@ var HELP = [
     '<tr><td>The person who asked isn’t on the guest list</td><td>Edit details and add them as a guest, then hand it back.</td></tr>' +
     '<tr><td>It was read without Claude</td><td>Check the details are right, then hand it back. This only happens if Claude can’t be reached.</td></tr>' +
     '<tr><td>Three sets of times went out and none worked</td><td>Talk to the guests, pick times by hand, or hand it back to try again.</td></tr>' +
-    '<tr><td>A guest hasn’t answered after two reminders</td><td>Reach out yourself, or Enter their answer if they replied another way.</td></tr>' +
+    '<tr><td>Three follow-ups went with no answer (shows in Needs You, but the poll stays open)</td><td>Press Start Again for three more, Leave Them Stopped, reach out yourself, or close it as Couldn’t Schedule.</td></tr>' +
     '<tr><td>No time in the next three weeks when everyone from MISMO is free</td><td>Free up a calendar or offer times by hand.</td></tr>' +
     '<tr><td>Outlook information missing for a working day</td><td>Tell Jonna: the Team Availability flow in Power Automate may have stopped.</td></tr>' +
     '<tr><td>An email failed five times</td><td>Tell Jonna: the Send Emails flow in Power Automate may need attention.</td></tr></tbody></table>'; } },
@@ -3296,8 +3349,8 @@ function viewStats(app) {
     ['Polls sent', reqs.filter(function (r) { return (r.guests || []).some(function (g) { return g.sentAt; }); }).length],
     ['Guests asked', guests.length],
     ['Guests who answered', answered + ' (' + pctOf(answered, guests.length) + ')'],
-    ['Reminders sent', reminders],
-    ['Answered after a reminder', afterReminder],
+    ['Follow-ups sent', reminders],
+    ['Answered after a follow-up', afterReminder],
     ['Average reply time', dur(avg(replies))],
     ['Times approved', approvals.length],
     ['Average wait for approval', dur(avg(approvals)), 'From the Scheduler finding a time to Vanessa or Jonna approving it']
@@ -3406,7 +3459,7 @@ function previewRequests() {
   var fu = { id: 'fu6h1j3k5m', title: 'Sample: eMortgage Roundtable Prep (made up)', purpose: 'A made-up booked meeting that’s still ahead.', duration: 30, where: 'Zoom', followDays: 2,
     owner: 'vrios@mismo.org', ownerName: 'Vanessa Rios', askedBy: 'Taylor Brooks', askedByEmail: 'taylor.brooks@example.com', createdAt: now - 5 * 864e5, createdBy: 'Scheduler', internal: ['amy', 'jonna'],
     slots: [{ id: 'f0', s: fuS, e: fuS + 30 * M }], guests: [{ id: 'g8', code: 'preview-taylor', name: 'Taylor Brooks', email: 'taylor.brooks@example.com', org: 'Example Lending' }],
-    status: 'booked', chosen: 'f0', bookedAt: now - 4 * 864e5, robot: { auto: true, stage: 'booked', readBy: 'claude', requester: { name: 'Taylor Brooks', email: 'taylor.brooks@example.com' }, offered: [] },
+    status: 'booked', chosen: 'f0', bookedAt: now - 4 * 864e5, robot: { auto: true, stage: 'booked', readBy: 'claude', invite: { state: 'sent', at: now - 4 * 864e5, zoom: { id: '81234567890', joinUrl: 'https://us02web.zoom.us/j/81234567890?pwd=example', passcode: '482913' } }, requester: { name: 'Taylor Brooks', email: 'taylor.brooks@example.com' }, offered: [] },
     log: [{ at: now - 4 * 864e5, by: 'Scheduler', what: 'Booked after Jonna approved' }], updatedAt: now - 4 * 864e5 };
   var un = { id: 'un9p2r4t6v', title: 'Sample: Vendor Intro, Example Tech (made up)', purpose: 'A made-up request we tried and couldn’t schedule.', duration: 30, where: 'Zoom', followDays: 2,
     owner: 'vrios@mismo.org', ownerName: 'Vanessa Rios', askedBy: 'Drew Patel', askedByEmail: 'drew.patel@example.com', createdAt: now - 12 * 864e5, createdBy: 'Scheduler', internal: ['brian'], slots: [],
@@ -3414,14 +3467,21 @@ function previewRequests() {
     status: 'cancelled', closed: 'unscheduled', closedAt: now - 2 * 864e5, closedBy: 'Vanessa Rios',
     robot: { auto: true, stage: 'person', round: 3, why: 'three sets of times went out and none worked for everyone', readBy: 'claude', requester: { name: 'Drew Patel', email: 'drew.patel@example.com' }, offered: [] },
     log: [{ at: now - 2 * 864e5, by: 'Vanessa Rios', what: 'Closed: couldn’t schedule' }], updatedAt: now - 2 * 864e5 };
-  return [ap, au, lk, vq, sd, ex, fu, un];
+  var fdS = bizDaysAhead(4);
+  var fd = { id: 'fd3k5m7p9r', title: 'Sample: Data Exchange Intro, Example Bank (made up)', purpose: 'A made-up poll where three follow-ups went with no answer.', duration: 30, where: 'Zoom', followDays: 2,
+    owner: 'vrios@mismo.org', ownerName: 'Vanessa Rios', askedBy: 'Chris Wong', askedByEmail: 'chris.wong@example.com', createdAt: now - 22 * 864e5, createdBy: 'Scheduler', internal: ['jonathan'],
+    slots: [[fdS[1], '10:00'], [fdS[2], '14:00'], [fdS[3], '11:00']].map(function (x, i) { var s = etAt(x[0], x[1]); return { id: 'd' + i, s: s, e: s + 30 * M, added: now - 2 * 864e5 }; }),
+    guests: [{ id: 'g10', code: 'preview-chris', name: 'Chris Wong', email: 'chris.wong@example.com', org: 'Example Bank', sentAt: now - 22 * 864e5, reminders: [now - 15 * 864e5, now - 8 * 864e5, now - 864e5] }],
+    robot: { auto: true, stage: 'polling', round: 3, readBy: 'claude', followDone: now - 864e5, requester: { name: 'Chris Wong', email: 'chris.wong@example.com' }, offered: [] },
+    log: [{ at: now - 864e5, by: 'Scheduler', what: 'Three follow-ups sent with no answer from Chris Wong; Vanessa and Jonna told' }], updatedAt: now - 864e5 };
+  return [ap, au, lk, vq, sd, ex, fu, un, fd];
 }
 function previewSent() {
   var now = Date.now();
   return {
     'ack-au8k2m4p6q': { at: now - 26 * 36e5, ok: true, to: ['sam.rivera@example.com'], cc: [], subject: 'We’re Working on Your Meeting Request: Sample: Membership Info, Example Lending (made up)', reqId: 'au8k2m4p6q' },
     'poll-au8k2m4p6q-g5-r1': { at: now - 26 * 36e5, ok: true, to: ['sam.rivera@example.com'], cc: [], subject: 'Finding a Time for Sample: Membership Info, Example Lending (made up)', reqId: 'au8k2m4p6q' },
-    'remind-au8k2m4p6q-g5-1': { at: now - 2 * 36e5, ok: true, to: ['sam.rivera@example.com'], cc: [], subject: 'Reminder: Finding a Time for Sample: Membership Info, Example Lending (made up)', reqId: 'au8k2m4p6q' },
+    'remind-au8k2m4p6q-g5-1': { at: now - 2 * 36e5, ok: true, to: ['sam.rivera@example.com'], cc: [], subject: 'Following Up: Finding a Time for Sample: Membership Info, Example Lending (made up)', reqId: 'au8k2m4p6q' },
     'ack-lk3n5p7r9s': { at: now - 3 * 36e5, ok: true, to: ['alex.kim@example.com'], cc: [], subject: 'We’re Working on Your Meeting Request: Sample: Intro Call (made up)', reqId: 'lk3n5p7r9s' }
   };
 }
