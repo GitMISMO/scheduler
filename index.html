@@ -1319,7 +1319,20 @@ function stopFollows(req) {
   var r = clone(req); r.robotEdit = { followStop: { by: me().name, at: Date.now() }, followDone: 0 };
   put(r, 'Stopped follow-ups'); toast('Follow-ups stopped. The poll stays open.');
 }
-function needsYou(req) { return needsLook(req) || awaitingApproval(req) || followsFinished(req); }
+/* no time works for everyone: the Scheduler waits for Vanessa or Jonna to pick, make someone optional, or send new times */
+function awaitingDecision(req) { var R = req.robot || {}; return isAuto(req) && R.stage === 'polling' && !!R.decide && !R.sendMore && req.status !== 'booked' && req.status !== 'cancelled'; }
+function sendNewTimes(req) {
+  if (!confirm('Send a fresh set of times for “' + (req.title || 'this meeting') + '”?\n\nEveryone who already answered gets a “New Times” email from scheduling@mismo.org.')) return;
+  var r = clone(req); r.robotEdit = { sendMore: { by: me().name, at: Date.now() } };
+  put(r, 'Asked the Scheduler to send new times'); toast('New times go out from scheduling@mismo.org within a few minutes.');
+}
+function toggleOptional(req, g) {
+  var r = clone(getReq(req.id)), on = false;
+  r.guests.forEach(function (x) { if (x.id === g.id) { x.optional = !x.optional; on = x.optional; if (!on) delete x.optional; } });
+  put(r, (on ? 'Made ' : 'Made required: ') + (g.name || g.email) + (on ? ' optional' : ''));
+  toast(on ? first(g.name || g.email) + ' is optional: times only have to work for the others, and the invite lists them as optional.' : first(g.name || g.email) + ' is required again.');
+}
+function needsYou(req) { return needsLook(req) || awaitingApproval(req) || followsFinished(req) || awaitingDecision(req); }
 /* Vanessa or Jonna approve a time before anyone outside MISMO is told it's booked */
 var APPROVERS = ['vrios', 'jcritchley'];
 function canApprove() { return PREVIEW || (canEdit() && APPROVERS.indexOf(avKey(me().email)) >= 0); }
@@ -2026,7 +2039,7 @@ function viewDetail(app, req) {
         : st === 'due' ? '<span class="pill p-due">No reply — follow up ' + esc(dayWord(followDue(req, g))) + '</span>'
         : st === 'closed' ? '<span class="pill p-draft">No reply</span>'
         : '<span class="pill p-wait">Asked ' + esc(fmtDay(g.sentAt, VIEW_TZ)) + ' · follow up ' + esc(dayWord(followDue(req, g))) + '</span>';
-      tr.innerHTML = '<td><b>' + esc(g.name || '(no name)') + '</b><div class="small muted">' + esc(g.email) + (g.org ? ' · ' + esc(g.org) : '') + '</div></td><td>' + stTxt + '</td>';
+      tr.innerHTML = '<td><b>' + esc(g.name || '(no name)') + '</b>' + (g.optional ? ' <span class="pill p-draft">Optional</span>' : '') + '<div class="small muted">' + esc(g.email) + (g.org ? ' · ' + esc(g.org) : '') + '</div></td><td>' + stTxt + '</td>';
       if ((st === 'waiting' || st === 'due') && editable && !auto) {
         var cd = el('button', 'linkbtn small', 'Wrong date? Change it'); cd.type = 'button'; cd.style.display = 'block'; cd.style.marginTop = '4px';
         cd.onclick = function () { changeSentDate(req, g); };
@@ -2045,6 +2058,7 @@ function viewDetail(app, req) {
         }, 'check'));
         if ((st === 'due' || st === 'waiting') && !auto) a.appendChild(btn('Follow up', 'ghost sm', function () { openDraft(req, 'follow', [g.id]); }, 'spark'));
         a.appendChild(btn(st === 'answered' ? 'Change answer' : 'Enter their answer', 'ghost sm', function () { openAnswer(req, g); }, 'pen'));
+        a.appendChild(btn(g.optional ? 'Make required' : 'Make optional', 'ghost sm', function () { toggleOptional(req, g); }));
       }
       tb.appendChild(tr);
     });
@@ -2094,6 +2108,11 @@ function robotPanel(req, editable) {
     apb.appendChild(apa); b.appendChild(apb);
   }
   if (R.approved && R.stage === 'approve') b.appendChild(el('div', 'notice', '<b>Approved by ' + esc(R.approved.by || 'staff') + '.</b> The confirmation and calendar invite go out within a few minutes.'));
+  if (awaitingDecision(req)) {
+    var dc = el('div', 'notice warn', '<b>No time on the poll works for everyone, so the Scheduler is waiting for you.</b> Press <b>Book</b> under the best time in the grid below, mark someone <b>optional</b> under Outside guests so the time only has to work for the others, or send a fresh set of times. ');
+    if (editable) { var dcb = el('button', 'linkbtn', 'Send New Times'); dcb.type = 'button'; dcb.onclick = function () { sendNewTimes(req); }; dc.appendChild(dcb); }
+    b.appendChild(dc);
+  }
   if (look) { var lk = el('div', 'notice bad', '<b>The Scheduler stopped because ' + esc(R.why || 'it needs a person') + '.</b> Fix what’s needed (for example <b>Edit details</b> to add who should attend), then hand it back, or take it from here yourself. If there’s no time that works, close it as Couldn’t Schedule. '); if (editable) { var lkb = el('button', 'linkbtn', 'Close as Couldn’t Schedule'); lkb.type = 'button'; lkb.onclick = function () { closeUnscheduled(req); }; lk.appendChild(lkb); } b.appendChild(lk); }
   if (R.replyAt) b.appendChild(el('div', 'notice', '<b>' + esc(R.replyFrom || 'Someone') + ' replied by email ' + esc(whenAgo(R.replyAt)) + ':</b> “' + esc(R.replySnippet || '') + '”'));
   var rq = R.requester || {};
@@ -2205,7 +2224,7 @@ function gridFor(req, editable) {
     tb.appendChild(el('tr', 'grp', '<td colspan="' + (slots.length + 1) + '">Outside guests</td>'));
     req.guests.forEach(function (g) {
       var tr = el('tr');
-      tr.innerHTML = '<td><b>' + esc(g.name || g.email) + '</b><div class="small muted">' + esc(g.org || '') + (g.answer ? '' : (g.org ? ' · ' : '') + 'no answer yet') + '</div></td>';
+      tr.innerHTML = '<td><b>' + esc(g.name || g.email) + '</b>' + (g.optional ? ' <span class="small muted">(optional)</span>' : '') + '<div class="small muted">' + esc(g.org || '') + (g.answer ? '' : (g.org ? ' · ' : '') + 'no answer yet') + '</div></td>';
       slots.forEach(function (sl) {
         var td = el('td', 'c'); td.innerHTML = cellHTML(guestAnswer(g, sl), editable ? 'Click to enter ' + first(g.name) + '’s answers' : '', editable);
         if (editable) $('button', td).onclick = function () { openAnswer(req, g); };
@@ -2945,7 +2964,7 @@ function plural(n, a, b) { return n + ' ' + (n === 1 ? a : b); }
 function shortAgo(t) { var m = Math.round((Date.now() - t) / 60000); if (m < 1) return 'just now'; if (m < 60) return m + ' min ago'; var h = Math.round(m / 60); if (h < 24) return h + (h === 1 ? ' hour ago' : ' hours ago'); return new Date(t).toLocaleDateString('en-US', { timeZone: VIEW_TZ, month: 'short', day: 'numeric' }); }
 function viewDash(app) {
   var now = Date.now(), all = allReqs(), weekAgo = now - 7 * 864e5;
-  var approvals = all.filter(awaitingApproval), looks = all.filter(function (r) { return needsLook(r) || followsFinished(r); }), due = followList(true).filter(function (x) { return x.st === 'due'; });
+  var approvals = all.filter(awaitingApproval), looks = all.filter(function (r) { return needsLook(r) || followsFinished(r) || awaitingDecision(r); }), due = followList(true).filter(function (x) { return x.st === 'due'; });
   var open = all.filter(function (r) { var ph = phase(r); return ph !== 'booked' && ph !== 'cancelled'; });
   var polls = open.filter(function (r) { var ph = phase(r); return ph === 'collecting' || ph === 'ready'; });
   var booked = all.filter(function (r) { return r.status === 'booked'; });
@@ -3016,6 +3035,11 @@ function viewDash(app) {
     nd.rows.appendChild(dashRow({ k: '#ff8f7d', nm: r.title || 'Meeting request', small: 'Approve ' + slotLabel(P, VIEW_TZ, true), wh: P.how || '', age: 'Waiting ' + shortAgo(P.at || r.updatedAt || now).replace(' ago', ''), ageCls: 'late', acts: acts, go: function () { go(null, r.id); } }));
   });
   looks.forEach(function (r) {
+    if (awaitingDecision(r)) {
+      var da = canEdit() ? [btn('Send New Times', 'sm ghost', function () { sendNewTimes(r); })] : [];
+      nd.rows.appendChild(dashRow({ k: '#f0b94a', nm: r.title || 'Meeting request', small: 'No time works for everyone: book the best one, make someone optional, or send new times', wh: '', age: 'Your call', ageCls: 'wait', acts: da, go: function () { go(null, r.id); } }));
+      return;
+    }
     if (followsFinished(r)) {
       var fa = canEdit() ? [btn('Start Again', 'sm', function () { startFollows(r); })] : [];
       nd.rows.appendChild(dashRow({ k: '#f0b94a', nm: r.title || 'Meeting request', small: 'Three follow-ups, no answer from ' + followWaiting(r).map(function (g) { return g.name || g.email; }).join(', '), wh: '', age: 'Follow-ups done', ageCls: 'wait', acts: fa, go: function () { go(null, r.id); } }));
@@ -3139,7 +3163,7 @@ var HELP = [
   { id: 'flow', k: '#5fd39a', t: 'How a Request Flows', h: function () { return '<h2>From Email to Booked Meeting</h2><p class="lead">Every request moves through the same stages. Its stage shows as the colored tag on the request.</p>' +
     '<table><thead><tr><th>Stage</th><th>What is happening</th><th>What you do</th></tr></thead><tbody>' +
     '<tr><td><b>Working on It</b></td><td>The Scheduler has read the email and is checking Outlook.</td><td>Nothing.</td></tr>' +
-    '<tr><td><b>Waiting on Replies</b></td><td>A poll is out. Times come off when someone at MISMO gets busy or a guest says no; new times are added when fewer than two are left. Guests who haven’t answered get a warm follow-up a week after the poll, then weekly, three at most.</td><td>Nothing. It shows under Polls Out on the Dashboard.</td></tr>' +
+    '<tr><td><b>Waiting on Replies</b></td><td>A poll is out. Times come off when someone at MISMO gets busy or a guest says no; when no time works for everyone, Vanessa and Jonna decide what happens next (book the closest time, make someone optional, or send new times). A guest marked optional doesn’t have to be free for a time to work. Guests who haven’t answered get a warm follow-up a week after the poll, then weekly, three at most.</td><td>Nothing. It shows under Polls Out on the Dashboard.</td></tr>' +
     '<tr><td><b>Waiting for Approval</b></td><td>A time works for everyone. It is held, so no other request can take it.</td><td>Approve it, or press Book under a different time.</td></tr>' +
     '<tr><td><b>Booked</b></td><td>Everyone has the confirmation.</td><td>The organizer sends the calendar invite with the Zoom link, using the button in the Booked email or on the request.</td></tr>' +
     '<tr><td><b>Needs a Look</b></td><td>The Scheduler stopped and told Vanessa why.</td><td>Fix what’s needed, then Hand Back to the Scheduler, or carry on by hand.</td></tr>' +
@@ -3181,7 +3205,8 @@ var HELP = [
     '<table><thead><tr><th>Email</th><th>Goes to</th><th>When</th></tr></thead><tbody>' +
     '<tr><td><b>We’re Working on Your Meeting Request</b></td><td>The person who asked</td><td>Only when nothing else reaches them straight away, for example while a time waits for approval.</td></tr>' +
     '<tr><td><b>Finding a Time for …</b></td><td>Each outside guest, the person who asked copied</td><td>When a poll goes out.</td></tr>' +
-    '<tr><td><b>New Times for …</b></td><td>Guests who already answered</td><td>When new times are added.</td></tr>' +
+    '<tr><td><b>No Time Works Yet</b></td><td>Vanessa, Jonna copied</td><td>When everyone has answered and no time works for all of them. It lists the closest times. The Scheduler never sends a second set on its own: you Book a time, make someone optional, or press Send New Times.</td></tr>' +
+    '<tr><td><b>New Times for …</b></td><td>Guests who already answered</td><td>Only when you press Send New Times (or change the meeting’s length).</td></tr>' +
     '<tr><td><b>Following Up / Still Hoping / One Last Note</b></td><td>A guest who hasn’t answered</td><td>Three warm follow-ups: a week after the poll, then a week apart. They stop when the guest answers, the meeting is booked, or you press Stop Follow-Ups.</td></tr>' +
     '<tr><td><b>Follow-Ups Finished</b></td><td>Vanessa, Jonna copied</td><td>When the third follow-up goes with no answer. Start them again for three more, leave them stopped, or close the request as Couldn’t Schedule.</td></tr>' +
     '<tr><td><b>Approve a Time</b></td><td>Vanessa, Jonna copied</td><td>When a time works for everyone.</td></tr>' +
@@ -3196,7 +3221,6 @@ var HELP = [
     '<tr><td>The email doesn’t say who from MISMO should be in the meeting</td><td>Edit details, tick the MISMO people, then Hand Back to the Scheduler.</td></tr>' +
     '<tr><td>The person who asked isn’t on the guest list</td><td>Edit details and add them as a guest, then hand it back.</td></tr>' +
     '<tr><td>It was read without Claude</td><td>Check the details are right, then hand it back. This only happens if Claude can’t be reached.</td></tr>' +
-    '<tr><td>Three sets of times went out and none worked</td><td>Talk to the guests, pick times by hand, or hand it back to try again.</td></tr>' +
     '<tr><td>Three follow-ups went with no answer (shows in Needs You, but the poll stays open)</td><td>Press Start Again for three more, Leave Them Stopped, reach out yourself, or close it as Couldn’t Schedule.</td></tr>' +
     '<tr><td>No time in the next three weeks when everyone from MISMO is free</td><td>Free up a calendar or offer times by hand.</td></tr>' +
     '<tr><td>Outlook information missing for a working day</td><td>Tell Jonna: the Team Availability flow in Power Automate may have stopped.</td></tr>' +
