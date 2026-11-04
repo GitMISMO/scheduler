@@ -984,7 +984,9 @@ var chain = Promise.resolve();
    -------------------------------------------------------------------------- */
 function keepGuestAnswers(onFile, mine) {
   if (!onFile || !mine || typeof onFile !== 'object' || typeof mine !== 'object') return mine;
-  var out = mine;
+  /* work on a copy: flush() compares what it sent with what is still waiting, and changing
+     its copy here (dropping robotEdit) made the two never match, so it saved over and over */
+  var out = clone(mine);
   if (Array.isArray(onFile.guests) && Array.isArray(out.guests)) {
     var byId = {};
     onFile.guests.forEach(function (g) { if (g && g.id) byId[g.id] = g; });
