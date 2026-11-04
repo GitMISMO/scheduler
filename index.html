@@ -516,6 +516,153 @@ body.railmini .rail nav button .n{display:none}
 .callegend i.unk{background:repeating-linear-gradient(45deg,var(--surface-2),var(--surface-2) 3px,var(--surface-3) 3px,var(--surface-3) 6px);outline:1px solid var(--border)}
 .calfoot{padding:0 16px 14px;font-size:11.5px;color:var(--ink-3)}
 </style>
+<style>
+/* ===== Dashboard, help and right-hand panel: copied from Membership Desk (Jonna, Nov 3, 2026) ===== */
+.hero{position:relative;overflow:hidden;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:28px;align-items:center;padding:24px 30px;border-radius:14px;margin:0 0 16px;color:#fff;background:radial-gradient(70% 140% at 100% 0%,rgba(116,191,235,.30),transparent 62%),radial-gradient(55% 120% at 0% 110%,rgba(95,211,154,.16),transparent 60%),linear-gradient(135deg,#0d314c 0%,#14486e 58%,#1d6a96 100%);border:1px solid rgba(116,191,235,.25);box-shadow:0 20px 44px -26px rgba(6,32,47,.85)}
+.hero::after{content:"";position:absolute;right:-70px;top:-90px;width:300px;height:300px;border-radius:50%;border:1px solid rgba(255,255,255,.08);box-shadow:0 0 0 44px rgba(255,255,255,.025),0 0 0 88px rgba(255,255,255,.02);pointer-events:none}
+.hero-l{position:relative;z-index:1;min-width:0}
+.hero-eb{display:flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;color:var(--sky);flex-wrap:wrap}
+.hero-eb #asof{color:rgba(255,255,255,.62);font-size:11px;white-space:nowrap}
+.hero-dot{width:4px;height:4px;border-radius:50%;background:rgba(255,255,255,.4)}
+.hero h1{margin:6px 0 8px;font-size:28px;font-weight:700;letter-spacing:-.015em;line-height:1.15}
+.hero-s{margin:0;max-width:760px;font-size:14.5px;line-height:1.6;color:rgba(255,255,255,.8)}
+.hero-s b{color:#fff;font-weight:700}
+.hero-acts{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+.hbtn{border:1px solid var(--sky);background:var(--sky);color:#06202f;border-radius:6px;padding:8px 15px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;transition:filter .12s,background .12s}
+.hbtn:hover{filter:brightness(1.07)}
+.hbtn.ghost{background:rgba(255,255,255,.06);color:#fff;border-color:rgba(255,255,255,.32)}
+.hbtn.ghost:hover{background:rgba(255,255,255,.14)}
+.hbtn:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.hero-r{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center}
+.hring{position:relative;width:132px;height:132px}
+.hring svg{display:block;width:100%;height:100%}
+.hring .arc{transition:stroke-dashoffset 1.2s cubic-bezier(.2,.8,.2,1)}
+.hring-m{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+.hring-m b{font-size:30px;font-weight:700;line-height:1;letter-spacing:-.02em}
+.hring-m span{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.65);margin-top:6px}
+.hring-c{margin-top:8px;font-size:12px;color:rgba(255,255,255,.72);white-space:nowrap}
+.hring-c b{color:#fff}
+.ktile{all:unset;box-sizing:border-box;cursor:pointer;position:relative;overflow:hidden;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px 14px 19px;display:flex;flex-direction:column;min-width:0;box-shadow:0 1px 2px rgba(6,32,47,.05);transition:transform .15s,box-shadow .15s,border-color .15s}
+.ktile::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--k)}
+.ktile:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--k) 55%,var(--border));box-shadow:0 16px 28px -20px rgba(6,32,47,.5)}
+.ktile:focus-visible{outline:2px solid var(--sky);outline-offset:3px}
+.kt{display:flex;align-items:center;gap:9px;font-size:12.5px;font-weight:700;color:var(--ink-2);white-space:nowrap;min-width:0}
+.kt i{width:28px;height:28px;border-radius:8px;flex:none;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--k) 24%,var(--surface));color:var(--ink)}
+.kt svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.kt .go{margin-left:auto;color:var(--ink-3);font-weight:600;opacity:0;transition:opacity .15s}
+.ktile:hover .kt .go,.ktile:focus-visible .kt .go{opacity:1}
+.ktile .kn{font-size:34px;font-weight:700;line-height:1.05;margin-top:10px;color:var(--ink);letter-spacing:-.02em}
+.ktile .sub{font-size:12.5px;color:var(--ink-3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mini{margin-top:12px;height:30px;display:flex;flex-direction:column;justify-content:flex-end;gap:5px}
+.mcap{font-size:11px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kbar{display:flex;gap:2px;height:8px;border-radius:4px;overflow:hidden;background:var(--surface-3)}
+.kbar i,.pbar-b i{display:block;height:100%;min-width:3px;transition:flex-grow .9s cubic-bezier(.2,.8,.2,1)}
+.mini.cols{flex-direction:row;align-items:flex-end;gap:4px}
+.mini.cols i{flex:1;border-radius:3px 3px 0 0;background:color-mix(in srgb,var(--k) 38%,var(--surface-3));transition:height .9s cubic-bezier(.2,.8,.2,1)}
+.mini.cols i.now{background:var(--k)}
+.hgrid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:16px;align-items:start}
+.hside{display:flex;flex-direction:column;gap:16px;min-width:0}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;min-width:0;display:flex;flex-direction:column}
+.ph{display:flex;align-items:center;gap:10px;padding:13px 16px 11px;border-bottom:1px solid var(--rule)}
+.ph h2{font-size:15px;font-weight:700;margin:0;white-space:nowrap}
+.ph .hint{margin-left:auto;font-size:12px;color:var(--ink-3);white-space:nowrap}
+.link{all:unset;cursor:pointer;margin-left:auto;font-size:12.5px;font-weight:600;color:var(--navy-mid);white-space:nowrap}
+:root[data-theme="dark"] .link{color:var(--sky)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .link{color:var(--sky)}}
+.link:hover{text-decoration:underline}
+.rows{display:flex;flex-direction:column}
+.row{all:unset;box-sizing:border-box;cursor:pointer;display:grid;grid-template-columns:10px minmax(0,1.6fr) minmax(0,1.2fr) 118px 96px;gap:12px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--rule);font-size:13.5px}
+.row:last-child{border-bottom:0}
+.row:hover{background:var(--surface-2)}
+.row:focus-visible{outline:2px solid var(--sky);outline-offset:-2px}
+.row .dot{width:10px;height:10px;border-radius:3px;background:var(--k)}
+.row .nm{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .wh{color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .dt{color:var(--ink-3);font-size:12.5px;white-space:nowrap}
+.age{justify-self:end;font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:4px;background:var(--surface-3);color:var(--ink-2);white-space:nowrap}
+.age.late{background:color-mix(in srgb,#ff8f7d 26%,var(--surface));color:var(--ink)}
+.age.ok{background:color-mix(in srgb,#5fd39a 24%,var(--surface));color:var(--ink)}
+.allclear{display:flex;align-items:center;gap:14px;padding:22px 18px}
+.ac-i{width:44px;height:44px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,#5fd39a 26%,var(--surface));color:var(--good)}
+.ac-i svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.allclear b{display:block;font-size:15px}
+.allclear span{font-size:13px;color:var(--ink-2);line-height:1.5}
+.wtip{margin:0;padding:10px 16px 0;font-size:12.5px;color:var(--ink-3);line-height:1.5}
+.pane{position:fixed;top:calc(var(--hq-h) + env(safe-area-inset-top,0px));right:0;bottom:0;width:min(1040px,75vw);background:var(--surface);border-left:1px solid var(--border);box-shadow:-10px 0 30px rgba(6,32,47,.18);z-index:96;transform:translateX(102%);transition:transform .22s cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column}
+.pane.on{transform:none}
+.pane-h{display:flex;align-items:flex-start;gap:12px;padding:18px 22px 14px;border-bottom:1px solid var(--rule)}
+.pane-h h2{margin:0;font-size:21px;font-weight:700}
+.pane-h .ps{font-size:13px;color:var(--ink-2);margin-top:3px}
+.pane-x{margin-left:auto;border:1px solid var(--border);background:var(--surface);color:var(--ink-2);border-radius:5px;width:30px;height:30px;font-size:17px;cursor:pointer;flex:none}
+.pane:not(.on){visibility:hidden;transition:transform .22s cubic-bezier(.4,0,.2,1),visibility 0s .22s}
+.helpgrid{display:grid;grid-template-columns:230px minmax(0,1fr);gap:16px;align-items:start}
+.helpnav{display:flex;flex-direction:column;gap:2px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:6px}
+.helpnav button{all:unset;box-sizing:border-box;cursor:pointer;display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:6px;font-size:13.5px;font-weight:500;color:var(--ink-2);white-space:nowrap}
+.helpnav button i{width:9px;height:9px;border-radius:2px;background:var(--k,#9fb3c8);flex:none}
+.helpnav button:hover{background:var(--surface-2)}
+.helpnav button[aria-current]{background:color-mix(in srgb,var(--sky) 16%,var(--surface));color:var(--ink);font-weight:600;box-shadow:inset 3px 0 0 var(--sky)}
+.helpnav button:focus-visible{outline:2px solid var(--sky);outline-offset:-2px}
+.helpbody{padding:18px 22px 20px}
+.helpbody h2{margin:0 0 4px;font-size:19px}
+.helpbody .lead{margin:0 0 16px;color:var(--ink-2);font-size:14px;line-height:1.55;max-width:860px}
+.hsteps{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:0 0 16px}
+.hstep{border:1px solid var(--border);border-radius:8px;padding:12px 14px;display:grid;grid-template-columns:26px minmax(0,1fr);gap:4px 10px;align-content:start}
+.hstep b.n{grid-row:span 2;width:24px;height:24px;border-radius:5px;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px}
+:root[data-theme="dark"] .hstep b.n{background:var(--sky);color:var(--navy)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .hstep b.n{background:var(--sky);color:var(--navy)}}
+.hstep strong{font-size:14px}
+.hstep span{font-size:13px;color:var(--ink-2);line-height:1.5}
+.hnote{border-left:3px solid var(--sky);background:var(--surface-2);padding:10px 14px;border-radius:0 6px 6px 0;font-size:13.5px;color:var(--ink-2);line-height:1.55;margin:0 0 12px}
+.hnote b{color:var(--ink)}
+.hfaq{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.hfaq div{border:1px solid var(--border);border-radius:8px;padding:12px 14px}
+.hfaq b{display:block;font-size:14px;margin-bottom:4px}
+.hfaq span{font-size:13px;color:var(--ink-2);line-height:1.5}
+.dash-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:0 0 16px}
+.hgrid{margin-bottom:8px}
+.hside>.panel{margin:0}
+.pane{top:var(--hq-h);width:min(1040px,75vw)}
+.pane-b{padding:18px 22px;overflow:auto;flex:1;min-height:0}
+.pane-b main,.pane-b #pane-app{max-width:none;padding:0}
+.row{grid-template-columns:10px minmax(0,1.5fr) minmax(0,1.2fr) auto auto}
+.row .acts{display:flex;gap:6px;justify-self:end}
+.row .acts .btn{padding:5px 11px;font-size:12.5px}
+.row.r3{grid-template-columns:10px minmax(0,1fr) auto}
+.row .nm small{display:block;font-weight:400;font-size:12px;color:var(--ink-3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.age.wait{background:color-mix(in srgb,#f0b94a 26%,var(--surface));color:var(--ink)}
+.age.sky{background:color-mix(in srgb,#74bfeb 26%,var(--surface));color:var(--ink)}
+.avgrid{display:grid;grid-template-columns:118px repeat(5,minmax(0,1fr));gap:4px;padding:12px 16px 14px;font-size:12px;align-items:center}
+.avgrid .h{font-size:11px;font-weight:700;color:var(--ink-3);text-align:center;white-space:nowrap}
+.avgrid .who{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.avgrid .c{height:22px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--ink)}
+.avkey{display:flex;gap:14px;padding:0 16px 12px;font-size:11.5px;color:var(--ink-3);flex-wrap:wrap}
+.avkey i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.feed{display:flex;flex-direction:column}
+.feed .fi{display:grid;grid-template-columns:84px minmax(0,1fr);gap:10px;padding:8px 16px;border-bottom:1px solid var(--rule);font-size:13px;cursor:pointer}
+.feed .fi:last-child{border-bottom:0}
+.feed .fi:hover{background:var(--surface-2)}
+.feed .fi span{color:var(--ink-3);font-size:12px;white-space:nowrap}
+.feed .fi b{font-weight:600}
+.feed .fi em{font-style:normal;color:var(--ink-2)}
+.helpbody ul,.helpbody ol{margin:0 0 14px;padding-left:20px;font-size:13.5px;line-height:1.6;color:var(--ink-2)}
+.helpbody li{margin-bottom:4px}
+.helpbody h3{font-size:15px;margin:18px 0 6px}
+.helpbody table{width:100%;border-collapse:collapse;font-size:13px;margin:0 0 14px}
+.helpbody th{text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);padding:7px 10px;border-bottom:1px solid var(--border)}
+.helpbody td{padding:8px 10px;border-bottom:1px solid var(--rule);vertical-align:top;color:var(--ink-2)}
+.helpbody td b{color:var(--ink)}
+.pane-b .pagehead h1{display:none}
+.pane-b .pagehead{margin-bottom:12px}
+@media(max-width:1100px){.dash-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.hgrid{grid-template-columns:1fr}.pane{width:100vw}}
+@media(max-width:700px){.hero{grid-template-columns:1fr;padding:20px;gap:16px}.hero-r{flex-direction:row;gap:14px;align-items:center}.hring{width:96px;height:96px}.hring-m b{font-size:22px}.hring-m span{font-size:8.5px}.hero h1{font-size:23px}.ktile .kn{font-size:28px}.row{grid-template-columns:10px minmax(0,1fr) auto}.row .wh,.row .dt{display:none}.avgrid{grid-template-columns:76px repeat(5,minmax(0,1fr))}.helpgrid{grid-template-columns:1fr}.helpnav{flex-direction:row;overflow-x:auto}.hsteps,.hfaq{grid-template-columns:1fr}}
+@media(max-width:480px){.dash-tiles{grid-template-columns:1fr}}
+@media(max-width:700px){.ph .hint{display:none}.ph{flex-wrap:wrap}.ph h2{white-space:normal}}
+.hgrid{align-items:stretch}
+.hside>.panel:last-child{flex:1}
+.feed .fi{grid-template-columns:76px minmax(0,1fr)}
+.feed .fi span{overflow:hidden;text-overflow:ellipsis}
+
+</style>
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><symbol id="mismo-logo" viewBox="0 0 708 108"><g transform="translate(0.000000,108.000000) scale(0.100000,-0.100000)" fill="var(--logo-body, #0f314c)"><path d="M5917 1065 c-169 -46 -279 -153 -335 -323 -21 -65 -25 -96 -25 -197
@@ -580,26 +727,14 @@ c57 -33 76 -84 76 -200 0 -116 -19 -167 -76 -200 -32 -19 -52 -20 -294 -20
     <div class="railhits" id="rail-hits" hidden></div>
   </div>
   <nav aria-label="Scheduler">
-    <button type="button" data-hq="inbox" aria-current="page" title="Incoming">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13h4l2 3h6l2-3h4"/><path d="M5.5 5h13l2.5 8v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5z"/></svg>
-      <span>Incoming</span><span class="n" id="in-count" data-z="1">0</span></button>
-    <button type="button" data-hq="follow" title="Follow Up">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5.5l3.5 2"/></svg>
-      <span>Follow Up</span><span class="n" id="fu-count" data-z="1">0</span></button>
-    <button type="button" data-hq="list" title="Requests">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 6h10M10 12h10M10 18h10"/><path d="M3.5 6l1.6 1.6L8 4.8M3.5 12l1.6 1.6L8 10.8M3.5 18l1.6 1.6L8 16.8"/></svg>
-      <span>Requests</span></button>
-    <button type="button" data-hq="new" title="New Request">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-      <span>New Request</span></button>
-    <button type="button" data-hq="cal" title="Calendar">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
-      <span>Calendar</span></button>
+    <button type="button" data-hq="dash" aria-current="page" title="Dashboard">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="8" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="5" rx="1.5"/><rect x="13.5" y="11.5" width="7" height="9" rx="1.5"/><rect x="3.5" y="14.5" width="7" height="6" rx="1.5"/></svg>
+      <span>Dashboard</span></button>
   </nav>
   <div class="mast-right">
-    <button class="theme-btn" id="help-btn" type="button" title="How It Works" data-hq="help">
+    <button class="theme-btn" id="help-btn" type="button" title="Help" data-hq="help">
       <svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.5a2.5 2.5 0 113.4 2.4c-.6.3-.9.8-.9 1.4v.5M12 17.2v.1"/></svg>
-      <span>How It Works</span>
+      <span>Help</span>
     </button>
     <button class="theme-btn" id="theme-btn" type="button">
       <svg class="ti ti-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6.4 6.4 0 009 9 9 9 0 11-9-9z"/></svg>
@@ -752,7 +887,13 @@ function noAccess(e) {
 var DB = { server: { docs: {} }, sha: null, loaded: false, pending: {}, flushing: false, timer: null, problem: '' };
 function docs() {
   var all = Object.assign({}, DB.server.docs || {});
-  Object.keys(DB.pending).forEach(function (id) { if (DB.pending[id] === null) delete all[id]; else all[id] = DB.pending[id]; });
+  Object.keys(DB.pending).forEach(function (id) {
+    if (DB.pending[id] === null) { delete all[id]; return; }
+    var r = DB.pending[id];
+    /* a Take Over, Hand Back or Approve not yet saved shows straight away */
+    if (r.robotEdit) { r = Object.assign({}, r, { robot: Object.assign({}, r.robot || {}, r.robotEdit) }); }
+    all[id] = r;
+  });
   return all;
 }
 function getReq(id) { return docs()[id] || null; }
@@ -776,7 +917,7 @@ function put(req, why) {
   DB.pending[req.id] = clone(req);
   keepUnsaved();
   render();
-  if (PREVIEW) { DB.server.docs[req.id] = clone(req); delete DB.pending[req.id]; saveState('Preview · nothing is saved'); afterSave([req.id]); return Promise.resolve(); }
+  if (PREVIEW) { DB.server.docs[req.id] = keepGuestAnswers(DB.server.docs[req.id], clone(req)); delete DB.pending[req.id]; saveState('Preview · nothing is saved'); afterSave([req.id]); render(); return Promise.resolve(); }
   saveState('Saving…');
   clearTimeout(DB.timer); DB.timer = setTimeout(flush, 250);
   return Promise.resolve();
@@ -1214,12 +1355,11 @@ function pollEmailHtml(req, g) {
     '<p style="margin:0 0 14px">' + escH(req.ownerName || 'MISMO') + ' would like to set up <b>' + escH(req.title || 'a meeting') + '</b>' +
     (req.duration ? ' (' + escH(String(req.duration)) + ' minutes)' : '') + '.</p>' +
     (req.purpose ? '<p style="margin:0 0 14px">' + escH(req.purpose) + '</p>' : '') +
-    '<p style="margin:0 0 8px">Here are the times on offer:</p>' +
-    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;margin:0 0 20px">' + rows + '</table>' +
-    '<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 18px"><tr><td style="background:#0d314c;border-radius:5px">' +
-    '<a href="' + escH(link) + '" style="display:inline-block;white-space:nowrap;min-width:max-content;padding:12px 22px;' + F +
-    ';font-size:15px;font-weight:700;color:#ffffff;text-decoration:none">Mark the Times That Work&nbsp;&rarr;</a></td></tr></table>' +
-    '<p style="margin:0 0 14px">Tick the ones that suit and leave the rest — there is a box for a note if none of them do. ' +
+    '<p style="margin:0 0 14px">Choose from the times when everyone at MISMO is free. It takes less than a minute.</p>' +
+    /* the Member 360 email button, copied exactly */
+    '<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding:6px 0 22px"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" bgcolor="#0d314c" style="background:#0d314c;border-radius:6px;padding:12px 24px;mso-padding-alt:12px 24px">' +
+    '<a href="' + escH(link) + '" target="_blank" style="display:inline-block;' + F + ';font-size:14px;font-weight:700;line-height:18px;color:#ffffff;text-decoration:none">Choose the Times That Work</a></td></tr></table></td></tr></table>' +
+    '<p style="margin:0 0 14px">Tick ✓ for the times that work and ✗ for the ones that don’t, then press Send. There is a box for a note if none of them suit. ' +
     'The link is yours alone; nobody else’s answers are shown on it.</p>' +
     '<p style="margin:0">Thank you,<br>' + escH(req.ownerName || 'MISMO') + '</p>';
   return emailShell(inner, 'Scheduling');
@@ -1326,38 +1466,80 @@ function followList(mineOnly) {
 /* ======================================================================
    SCREENS
    ====================================================================== */
-var STATE = { tab: 'follow', reqId: null, fuMine: lsGet('fuMine', true), listMine: lsGet('listMine', false), listShow: lsGet('listShow', 'active') };
+var PANE_VIEWS = ['inbox', 'follow', 'list', 'new', 'cal'];
+var STATE = { tab: 'dash', pane: null, reqId: null, fuMine: lsGet('fuMine', true), listMine: lsGet('listMine', false), listShow: lsGet('listShow', 'active') };
 function readHash() {
   var h = location.hash.replace(/^#/, ''), m = /(?:^|&)r=([a-z0-9]+)/.exec(h), t = /(?:^|&)tab=([a-z]+)/.exec(h);
   STATE.reqId = m ? m[1] : null;
-  if (t && ['inbox', 'follow', 'list', 'new', 'help', 'cal'].indexOf(t[1]) >= 0) STATE.tab = t[1];
+  var tab = t ? t[1] : 'dash';
+  if (PANE_VIEWS.indexOf(tab) >= 0) { STATE.tab = 'dash'; STATE.pane = tab; }
+  else { STATE.tab = tab === 'help' ? 'help' : 'dash'; STATE.pane = null; }
+  if (STATE.reqId) { STATE.tab = 'dash'; STATE.pane = 'req'; }
 }
+/* the Dashboard and Help are the pages; a request, the full lists, the calendar and a new
+   request open in the panel on the right, over the Dashboard */
 function go(tab, reqId) {
-  STATE.tab = tab || STATE.tab; STATE.reqId = reqId || null;
-  var h = reqId ? '#r=' + reqId : '#tab=' + STATE.tab;
+  var wasHelp = STATE.tab === 'help';
+  if (reqId) { STATE.tab = 'dash'; STATE.pane = 'req'; STATE.reqId = reqId; }
+  else if (PANE_VIEWS.indexOf(tab) >= 0) { STATE.tab = 'dash'; STATE.pane = tab; STATE.reqId = null; }
+  else { STATE.tab = tab === 'help' ? 'help' : 'dash'; STATE.pane = null; STATE.reqId = null; }
+  var h = reqId ? '#r=' + reqId : '#tab=' + (STATE.pane || STATE.tab);
   if (location.hash !== h) history.pushState(null, '', h);
-  render({ full: true }); window.scrollTo(0, 0);
+  render({ full: true });
+  if (!STATE.pane || wasHelp) window.scrollTo(0, 0);
+  var pb = $('#pane-b'); if (pb && STATE.pane) pb.scrollTop = 0;
 }
+function closePane() { go('dash'); }
 window.addEventListener('popstate', function () { readHash(); render({ full: true }); });
 window.addEventListener('hashchange', function () { readHash(); render({ full: true }); });
 
 function render(opts) {
   var app = $('#app'); if (!app) return;
-  var fu = followList(true).filter(function (x) { return x.st === 'due'; }).length;
-  var c = $('#fu-count'); c.textContent = fu; c.classList.toggle('hot', fu > 0);
-  var ic = $('#in-count'), inN = inboxNew().length; ic.textContent = inN; ic.classList.toggle('hot', inN > 0);
-  document.title = (fu + inN ? '(' + (fu + inN) + ') ' : '') + 'Scheduler';
-  /* never wipe a half-filled New Request form because something changed in the background */
-  if (!(opts && opts.full) && !STATE.reqId && STATE.tab === 'new' && $('#f-title', app)) return;
-  $$('.tab').forEach(function (b) { b.setAttribute('aria-selected', String(!STATE.reqId && b.dataset.tab === STATE.tab)); });
+  var need = allReqs().filter(needsYou).length + followList(true).filter(function (x) { return x.st === 'due'; }).length;
+  document.title = (need ? '(' + need + ') ' : '') + 'Scheduler';
   var keepFocus = document.activeElement && document.activeElement.id;
+  var full = opts && opts.full;
+  /* never wipe a half-filled New Request form because something changed in the background */
+  var formOpen = STATE.pane === 'new' && $('#pane-b #f-title');
+  if (!(formOpen && !full)) renderPane();
+  var y = window.scrollY;
   app.innerHTML = '';
   if (PREVIEW) app.appendChild(el('div', 'preview-band', '<b>Preview.</b> This is the Scheduler with sample data (made-up example requests). Nothing you do here is saved or sent. On resources.mismo.org it uses your team’s real data and Outlook availability.'));
   if (DB.problem) app.appendChild(el('div', 'notice bad', esc(DB.problem)));
   if (!DB.loaded) { app.appendChild(el('div', 'empty', '<span class="spinner"></span> Loading…')); return; }
-  if (STATE.reqId) { var r = getReq(STATE.reqId); if (r) viewDetail(app, r); else { app.appendChild(el('div', 'empty', 'That request isn’t here any more. <button class="linkbtn" type="button">See all requests</button>')); $('.linkbtn', app).onclick = function () { go('list'); }; } }
-  else ({ inbox: viewInbox, follow: viewFollow, list: viewList, 'new': viewNew, help: viewHelp, cal: viewCalendar })[STATE.tab](app);
+  (STATE.tab === 'help' ? viewHelp : viewDash)(app);
+  if (!full) window.scrollTo(0, y);
   if (keepFocus && document.getElementById(keepFocus)) try { document.getElementById(keepFocus).focus(); } catch (e) {}
+}
+/* ---------------- the right-hand panel ---------------- */
+function paneEl() {
+  var p = $('#pane');
+  if (p) return p;
+  p = el('aside', 'pane'); p.id = 'pane'; p.setAttribute('aria-label', 'Details');
+  p.innerHTML = '<div class="pane-h"><div style="min-width:0"><h2 id="pane-t"></h2><div class="ps" id="pane-s"></div></div><button class="pane-x" type="button" aria-label="Close" title="Close (Esc)">×</button></div><div class="pane-b" id="pane-b"></div>';
+  $('.pane-x', p).onclick = closePane;
+  document.body.appendChild(p);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && STATE.pane && !$$('.scrim').length) closePane(); });
+  return p;
+}
+var PANE_TITLES = { inbox: ['Incoming Email', 'Everything that reached scheduling@mismo.org'], follow: ['Follow Up', 'People who haven’t answered yet, and what needs a look'], list: ['All Requests', 'Every meeting being scheduled, by anyone on the team'], 'new': ['New Request', 'Start one by hand. Emailed requests start on their own.'], cal: ['Team Calendar', 'When everyone is free, from Outlook'] };
+function renderPane() {
+  var p = paneEl(), b = $('#pane-b', p);
+  if (!STATE.pane || !DB.loaded) { p.classList.remove('on'); return; }
+  var top = b.scrollTop;
+  b.innerHTML = '';
+  if (STATE.pane === 'req') {
+    var r = getReq(STATE.reqId);
+    $('#pane-t', p).textContent = r ? (r.title || 'Meeting request') : 'Not found';
+    $('#pane-s', p).textContent = r ? PHASE[phase(r)].n + (r.robot && r.robot.auto ? ' · Automatic' : '') + ' · ' + (r.duration || 30) + ' min' : '';
+    if (r) viewDetail(b, r); else b.appendChild(el('div', 'empty', 'That request isn’t here any more.'));
+  } else {
+    var t = PANE_TITLES[STATE.pane] || ['', ''];
+    $('#pane-t', p).textContent = t[0]; $('#pane-s', p).textContent = t[1];
+    ({ inbox: viewInbox, follow: viewFollow, list: viewList, 'new': viewNew, cal: viewCalendar })[STATE.pane](b);
+  }
+  p.classList.add('on');
+  b.scrollTop = top;
 }
 $$('.tab').forEach(function (b) { b.addEventListener('click', function () { go(b.dataset.tab); }); });
 
@@ -1692,7 +1874,6 @@ function guessFromEmail(txt) {
 /* ---------------- one request ---------------- */
 function viewDetail(app, req) {
   var editable = canEdit() && req.status !== 'cancelled';
-  var b = btn('All requests', 'ghost sm back', function () { go('list'); }, 'back'); app.appendChild(b);
   var head = el('div', 'pagehead');
   var meta = [esc(req.duration || 30) + ' min', esc(req.where || ''), 'Organizer: ' + esc(req.ownerName || req.owner)];
   if (req.askedBy) meta.push('Asked for by ' + esc(req.askedBy));
@@ -2608,28 +2789,311 @@ function downloadIcs(req, sl) {
 /* ======================================================================
    HOW IT WORKS
    ====================================================================== */
+/* ======================================================================
+   THE DASHBOARD — everything on one page, the way Membership Desk and
+   MISMO Media read: the headline first, four figure boxes, then the work.
+   A request, the full lists, the calendar and a new request open in the
+   panel on the right.
+   ====================================================================== */
+var DICON = {
+  you: '<path d="M9 11.5l2.6 2.6L17 8.7"/><rect x="3.5" y="3.5" width="17" height="17" rx="3"/>',
+  poll: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+  booked: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M9 15l2 2 4-4"/>',
+  mail: '<path d="M3 13h4l2 3h6l2-3h4"/><path d="M5.5 5h13l2.5 8v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5z"/>'
+};
+function RED() { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } }
+function countUp(n, v) { if (RED() || !v) { n.textContent = String(v); return; } var t0 = null; function f(t) { if (!t0) t0 = t; var k = Math.min(1, (t - t0) / 600); n.textContent = String(Math.round(v * (1 - Math.pow(1 - k, 3)))); if (k < 1) requestAnimationFrame(f); } requestAnimationFrame(f); }
+function ktile(o) {
+  var b = el('button', 'ktile'); b.type = 'button'; b.style.setProperty('--k', o.k);
+  b.setAttribute('aria-label', o.lab + ': ' + o.v + ', ' + o.sub);
+  b.innerHTML = '<span class="kt"><i><svg viewBox="0 0 24 24" aria-hidden="true">' + o.ic + '</svg></i>' + esc(o.lab) + '<span class="go">→</span></span><b class="kn">0</b><span class="sub" title="' + esc(o.sub) + '">' + esc(o.sub) + '</span><div class="mini"></div>';
+  b.onclick = o.go; countUp($('.kn', b), o.v);
+  var m = $('.mini', b); m.appendChild(el('div', 'mcap', esc(o.cap || '')));
+  var bar = el('div', 'kbar'); m.appendChild(bar);
+  (o.parts || []).filter(function (p) { return p.v > 0; }).forEach(function (p) { var i = el('i'); i.style.cssText = 'flex:' + (RED() ? p.v : 0) + ' 1 0;background:' + p.k; if (p.t) i.title = p.t; bar.appendChild(i); if (!RED()) setTimeout(function () { i.style.flexGrow = String(p.v); }, 60); });
+  return b;
+}
+function dashRow(o) {
+  var r = el('div', 'row' + (o.cls ? ' ' + o.cls : '')); r.tabIndex = 0; r.setAttribute('role', 'button');
+  r.style.setProperty('--k', o.k || 'var(--sky)');
+  r.innerHTML = '<span class="dot"></span><span class="nm">' + esc(o.nm) + (o.small ? '<small>' + esc(o.small) + '</small>' : '') + '</span>' +
+    (o.wh != null ? '<span class="wh">' + esc(o.wh) + '</span>' : '') + (o.age ? '<span class="age ' + (o.ageCls || '') + '">' + esc(o.age) + '</span>' : '<span></span>');
+  if (o.acts) { var a = el('span', 'acts'); o.acts.forEach(function (x) { a.appendChild(x); }); r.appendChild(a); }
+  r.onclick = function (e) { if (e.target.closest('.acts')) return; o.go(); };
+  r.onkeydown = function (e) { if ((e.key === 'Enter' || e.key === ' ') && e.target === r) { e.preventDefault(); o.go(); } };
+  return r;
+}
+function dashPanel(title, hint, link, linkGo) {
+  var p = el('div', 'panel');
+  p.innerHTML = '<div class="ph"><h2>' + esc(title) + '</h2>' + (hint ? '<span class="hint">' + esc(hint) + '</span>' : '') + '</div>';
+  if (link) { var l = el('button', 'link', esc(link) + '&nbsp;→'); l.type = 'button'; l.onclick = linkGo; if (hint) l.style.marginLeft = '12px'; $('.ph', p).appendChild(l); }
+  var rows = el('div', 'rows'); p.appendChild(rows);
+  return { p: p, rows: rows };
+}
+function allClear(title, line) {
+  var d = el('div', 'allclear');
+  d.innerHTML = '<span class="ac-i"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7"/></svg></span><div><b>' + esc(title) + '</b><span>' + esc(line) + '</span></div>';
+  return d;
+}
+function plural(n, a, b) { return n + ' ' + (n === 1 ? a : b); }
+function shortAgo(t) { var m = Math.round((Date.now() - t) / 60000); if (m < 1) return 'just now'; if (m < 60) return m + ' min ago'; var h = Math.round(m / 60); if (h < 24) return h + (h === 1 ? ' hour ago' : ' hours ago'); return new Date(t).toLocaleDateString('en-US', { timeZone: VIEW_TZ, month: 'short', day: 'numeric' }); }
+function viewDash(app) {
+  var now = Date.now(), all = allReqs(), weekAgo = now - 7 * 864e5;
+  var approvals = all.filter(awaitingApproval), looks = all.filter(needsLook), due = followList(true).filter(function (x) { return x.st === 'due'; });
+  var open = all.filter(function (r) { var ph = phase(r); return ph !== 'booked' && ph !== 'cancelled'; });
+  var polls = open.filter(function (r) { var ph = phase(r); return ph === 'collecting' || ph === 'ready'; });
+  var booked = all.filter(function (r) { return r.status === 'booked'; });
+  var bookedWeek = booked.filter(function (r) { return (r.bookedAt || 0) > weekAgo; });
+  var coming = booked.map(function (r) { return { r: r, sl: slotById(r, r.chosen) }; }).filter(function (x) { return x.sl && x.sl.e > now; }).sort(function (a, b) { return a.sl.s - b.sl.s; });
+  var inbox = inboxItems(), inWeek = inbox.filter(function (x) { return (x.receivedAt || 0) > weekAgo; });
+  var guestsWaiting = 0, guestsIn = 0;
+  polls.forEach(function (r) { (r.guests || []).forEach(function (g) { if (g.answer) guestsIn++; else if (g.sentAt) guestsWaiting++; }); });
+  var needN = approvals.length + looks.length + due.length;
+
+  /* ---- the headline ---- */
+  var hr = new Date().getHours(), nm = first(me().name);
+  var hero = el('div', 'hero');
+  hero.innerHTML = '<div class="hero-l"><div class="hero-eb"><span>Scheduler</span><span class="hero-dot"></span><span id="asof">As of ' + esc(new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })) + '</span></div>' +
+    '<h1>' + (hr < 12 ? 'Good Morning' : hr < 17 ? 'Good Afternoon' : 'Good Evening') + (nm ? ', ' + esc(nm) : '') + '</h1><p class="hero-s"></p><div class="hero-acts"></div></div><div class="hero-r"></div>';
+  var hs = $('.hero-s', hero), B = function (t) { return '<b>' + esc(t) + '</b>'; }, sent = [];
+  sent.push(needN ? B(plural(needN, 'thing needs you', 'things need you')) + (approvals.length ? ', ' + plural(approvals.length, 'time', 'times') + ' to approve' : '') + '.' : B('Nothing needs you right now.'));
+  if (polls.length) sent.push(plural(polls.length, 'poll is', 'polls are') + ' out' + (guestsWaiting ? ', waiting on ' + plural(guestsWaiting, 'guest', 'guests') : '') + '.');
+  sent.push(bookedWeek.length ? B(plural(bookedWeek.length, 'meeting', 'meetings') + ' booked') + ' this week' + (coming.length ? ', ' + coming.length + ' coming up.' : '.') : (coming.length ? plural(coming.length, 'meeting is', 'meetings are') + ' coming up.' : ''));
+  hs.innerHTML = sent.join(' ');
+  var ha = $('.hero-acts', hero);
+  var b1 = el('button', 'hbtn', needN ? 'Review What Needs You' : 'Start a Request'); b1.type = 'button';
+  b1.onclick = needN ? function () { var t = $('#dash-needs'); if (t) t.scrollIntoView({ behavior: RED() ? 'auto' : 'smooth', block: 'start' }); } : function () { go('new'); };
+  ha.appendChild(b1);
+  if (needN && canEdit()) { var b2 = el('button', 'hbtn ghost', 'Start a Request'); b2.type = 'button'; b2.onclick = function () { go('new'); }; ha.appendChild(b2); }
+  var b3 = el('button', 'hbtn ghost', 'Team Calendar'); b3.type = 'button'; b3.onclick = function () { go('cal'); }; ha.appendChild(b3);
+  /* the ring: of the last 30 days' requests, how many are booked */
+  var recent = all.filter(function (r) { return (r.createdAt || 0) > now - 30 * 864e5 && r.status !== 'cancelled'; });
+  var rb = recent.filter(function (r) { return r.status === 'booked'; }).length, pct = recent.length ? Math.round(100 * rb / recent.length) : 0;
+  var LEN = 2 * Math.PI * 54, off = function (v) { return (LEN * (1 - v / 100)).toFixed(1); };
+  var ring = $('.hero-r', hero);
+  ring.innerHTML = '<div class="hring"><svg viewBox="0 0 132 132" aria-hidden="true"><defs><linearGradient id="hring-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#74bfeb"/><stop offset="1" stop-color="#5fd39a"/></linearGradient></defs><circle cx="66" cy="66" r="54" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="12"/><circle class="arc" cx="66" cy="66" r="54" fill="none" stroke="url(#hring-g)" stroke-width="12" stroke-linecap="' + (pct ? 'round' : 'butt') + '" stroke-dasharray="' + LEN.toFixed(1) + '" stroke-dashoffset="' + (RED() ? off(pct) : off(0)) + '" transform="rotate(-90 66 66)"/></svg><div class="hring-m"><b>' + pct + '%</b><span>Booked</span></div></div><div class="hring-c"><b>' + rb + '</b> booked · <b>' + (recent.length - rb) + '</b> in progress</div>';
+  ring.title = 'Of the requests started in the last 30 days, ' + pct + '% are booked';
+  if (!RED()) setTimeout(function () { var a = $('.arc', ring); if (a) a.setAttribute('stroke-dashoffset', off(pct)); }, 80);
+  app.appendChild(hero);
+
+  /* ---- the four boxes ---- */
+  var tiles = el('div', 'dash-tiles');
+  var autoBooked = bookedWeek.filter(function (r) { return r.robot && r.robot.auto; }).length;
+  var notReq = inWeek.filter(function (x) { return x.status === 'dismissed' || (x.status === 'new' && x.robotAt); }).length;
+  tiles.appendChild(ktile({ k: '#ff8f7d', ic: DICON.you, lab: 'Needs You', v: needN,
+    sub: needN ? [approvals.length ? approvals.length + ' to approve' : '', looks.length ? looks.length + ' to look at' : '', due.length ? due.length + ' to follow up' : ''].filter(Boolean).join(' · ') : 'nothing waiting on you',
+    cap: needN ? 'Approve · Look at · Follow up' : 'All clear', parts: needN ? [{ v: approvals.length, k: '#ff8f7d', t: 'To approve' }, { v: looks.length, k: '#f0b94a', t: 'To look at' }, { v: due.length, k: '#74bfeb', t: 'To follow up' }] : [{ v: 1, k: '#5fd39a' }],
+    go: function () { var t = $('#dash-needs'); if (t) t.scrollIntoView({ behavior: RED() ? 'auto' : 'smooth', block: 'start' }); } }));
+  tiles.appendChild(ktile({ k: '#74bfeb', ic: DICON.poll, lab: 'Polls Out', v: polls.length,
+    sub: polls.length ? plural(guestsWaiting, 'guest', 'guests') + ' still to answer' : 'no polls waiting',
+    cap: guestsIn + guestsWaiting ? guestsIn + ' answered · ' + guestsWaiting + ' waiting' : 'No guests waiting', parts: [{ v: guestsIn, k: '#5fd39a', t: 'Answered' }, { v: guestsWaiting, k: '#74bfeb', t: 'Waiting' }],
+    go: function () { STATE.listShow = 'active'; go('list'); } }));
+  tiles.appendChild(ktile({ k: '#5fd39a', ic: DICON.booked, lab: 'Booked This Week', v: bookedWeek.length,
+    sub: coming.length ? coming.length + ' coming up' : 'nothing on the calendar yet',
+    cap: bookedWeek.length ? autoBooked + ' automatic · ' + (bookedWeek.length - autoBooked) + ' by hand' : 'None this week', parts: [{ v: autoBooked, k: '#5fd39a', t: 'Automatic' }, { v: bookedWeek.length - autoBooked, k: '#9fb3c8', t: 'By hand' }],
+    go: function () { STATE.listShow = 'booked'; lsSet('listShow', 'booked'); go('list'); } }));
+  tiles.appendChild(ktile({ k: '#f0b94a', ic: DICON.mail, lab: 'Emails This Week', v: inWeek.length,
+    sub: inWeek.length ? (inWeek.length - notReq) + ' became requests' : 'nothing came in this week',
+    cap: inWeek.length ? (inWeek.length - notReq) + ' requests · ' + notReq + ' set aside' : 'scheduling@mismo.org', parts: [{ v: inWeek.length - notReq, k: '#f0b94a', t: 'Became requests' }, { v: notReq, k: '#9fb3c8', t: 'Set aside' }],
+    go: function () { go('inbox'); } }));
+  app.appendChild(tiles);
+
+  var grid = el('div', 'hgrid'), L = el('div', 'hside'), R = el('div', 'hside');
+  grid.appendChild(L); grid.appendChild(R); app.appendChild(grid);
+
+  /* ---- Needs You ---- */
+  var nd = dashPanel('Needs You', needN ? 'approve first, then look' : '', due.length ? 'Follow Up' : '', function () { go('follow'); });
+  nd.p.id = 'dash-needs'; nd.p.style.scrollMarginTop = 'calc(var(--hq-h) + 16px)';
+  approvals.forEach(function (r) {
+    var P = r.robot.proposed, acts = [];
+    if (canApprove()) acts.push(btn('Approve', 'sm', function () { approveSlot(r, P); }, 'check'));
+    nd.rows.appendChild(dashRow({ k: '#ff8f7d', nm: r.title || 'Meeting request', small: 'Approve ' + slotLabel(P, VIEW_TZ, true), wh: P.how || '', age: 'Waiting ' + shortAgo(P.at || r.updatedAt || now).replace(' ago', ''), ageCls: 'late', acts: acts, go: function () { go(null, r.id); } }));
+  });
+  looks.forEach(function (r) {
+    nd.rows.appendChild(dashRow({ k: '#f0b94a', nm: r.title || 'Meeting request', small: 'Stopped because ' + (r.robot.why || 'it needs a person'), wh: (r.robot.requester && (r.robot.requester.name || r.robot.requester.email)) || '', age: 'Needs a look', ageCls: 'wait', go: function () { go(null, r.id); } }));
+  });
+  due.forEach(function (x) {
+    nd.rows.appendChild(dashRow({ k: '#74bfeb', nm: 'Follow up with ' + (x.g.name || x.g.email), small: x.r.title, wh: 'asked ' + fmtDay(Math.max(x.g.sentAt || 0, (x.g.followUps || []).slice(-1)[0] || 0), VIEW_TZ), age: 'Due ' + dayWord(x.due), ageCls: 'sky', go: function () { go(null, x.r.id); } }));
+  });
+  if (!needN) nd.p.appendChild(allClear('You’re all caught up', 'Nothing to approve or look at. Times the Scheduler finds land here for you or Vanessa to approve.'));
+  L.appendChild(nd.p);
+
+  /* ---- Polls Out ---- */
+  var pl = dashPanel('Polls Out', polls.length ? 'newest first' : '', 'All Requests', function () { STATE.listShow = 'active'; go('list'); });
+  polls.slice().sort(function (a, b) { return (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0); }).slice(0, 6).forEach(function (r) {
+    var gs = r.guests || [], ans = gs.filter(function (g) { return g.answer; }).length, live = (r.slots || []).filter(function (s) { return s.s > now; }).length;
+    var rem = gs.reduce(function (a, g) { return a + (g.reminders || []).length; }, 0);
+    var who = (r.internal || []).map(function (id) { var p = person(id); return p ? first(p.name) : id; }).concat(gs.map(function (g) { return g.name || g.email; }));
+    pl.rows.appendChild(dashRow({ k: isAuto(r) ? '#74bfeb' : '#9fb3c8', nm: r.title || 'Meeting request', small: who.join(', '), wh: ans + ' of ' + gs.length + ' answered · ' + plural(live, 'time', 'times') + ' on offer', age: rem ? 'Reminded ' + rem + '×' : (isAuto(r) ? 'Automatic' : 'By hand'), ageCls: rem ? 'wait' : '', go: function () { go(null, r.id); } }));
+  });
+  if (!polls.length) pl.p.appendChild(el('div', 'empty', 'No polls out. When a request needs guests to choose, its poll shows here with who has answered.'));
+  L.appendChild(pl.p);
+
+  /* ---- Coming Up ---- */
+  var cu = dashPanel('Coming Up', 'next two weeks', 'Booked', function () { STATE.listShow = 'booked'; lsSet('listShow', 'booked'); go('list'); });
+  coming.filter(function (x) { return x.sl.s < now + 15 * 864e5; }).slice(0, 6).forEach(function (x) {
+    var r = x.r, who = (r.internal || []).map(function (id) { var p = person(id); return p ? first(p.name) : id; }).concat((r.guests || []).map(function (g) { return g.name || g.email; }));
+    cu.rows.appendChild(dashRow({ k: '#5fd39a', nm: r.title || 'Meeting', small: who.join(', '), wh: fmtTime(x.sl.s, VIEW_TZ) + ' ' + tzAbbr(x.sl.s, VIEW_TZ) + ' · ' + (r.where || 'Zoom'), age: dayWord(parts(x.sl.s, VIEW_TZ).iso).replace(/^./, function (c) { return c.toUpperCase(); }), ageCls: 'ok', go: function () { go(null, r.id); } }));
+  });
+  if (!cu.rows.children.length) {
+    var past = booked.map(function (r) { return { r: r, sl: slotById(r, r.chosen) }; }).filter(function (x) { return x.sl; }).sort(function (a, b) { return (b.r.bookedAt || 0) - (a.r.bookedAt || 0); }).slice(0, 4);
+    if (past.length) {
+      $('.ph h2', cu.p).textContent = 'Recently Booked';
+      var hn = $('.ph .hint', cu.p); if (hn) hn.textContent = 'nothing in the next two weeks';
+      past.forEach(function (x) { var r = x.r; cu.rows.appendChild(dashRow({ k: '#9fb3c8', nm: r.title || 'Meeting', small: slotLabel(x.sl, VIEW_TZ, true), wh: r.where || 'Zoom', age: 'Booked ' + shortAgo(r.bookedAt || now), go: function () { go(null, r.id); } })); });
+    } else cu.p.appendChild(el('div', 'empty', 'Nothing booked yet. Booked meetings show here with their time.'));
+  }
+  L.appendChild(cu.p);
+
+  /* ---- Team This Week ---- */
+  var tw = dashPanel('Team This Week', 'free time, 9–5 Eastern', 'Calendar', function () { go('cal'); });
+  var days5 = bizDaysAhead(5, isoAdd(todayISO(ET), -1)).filter(function (d) { return !isWeekend(d); }).slice(0, 5);
+  var g = el('div', 'avgrid');
+  g.appendChild(el('span'));
+  days5.forEach(function (d) { g.appendChild(el('span', 'h', esc(new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', timeZone: 'UTC' })))); });
+  TEAM.people.forEach(function (pp) {
+    g.appendChild(el('span', 'who', esc(pp.name)));
+    days5.forEach(function (d) {
+      var free = 0, known = 0;
+      for (var m = 9 * 60; m < 17 * 60; m += 30) { var st = calState(pp.id, at(d, m, ET), at(d, m + 30, ET)); if (st === null) continue; known++; if (st === 'free') free++; }
+      var c = el('span', 'c');
+      if (!known) { c.style.background = 'var(--unk)'; c.textContent = '–'; c.title = pp.name + ': no Outlook data'; }
+      else { var f = free / known, pctF = Math.round(100 * f); c.textContent = pctF + '%'; c.title = pp.name + ', ' + d + ': ' + pctF + '% free'; c.style.background = 'color-mix(in srgb,' + (f >= .6 ? '#5fd39a' : f >= .3 ? '#f0b94a' : '#ff8f7d') + ' ' + Math.round(22 + 30 * (f >= .6 ? f : 1 - f)) + '%,var(--surface))'; }
+      g.appendChild(c);
+    });
+  });
+  tw.rows.appendChild(g);
+  tw.p.appendChild(el('div', 'avkey', '<span><i style="background:color-mix(in srgb,#5fd39a 45%,var(--surface))"></i>Mostly free</span><span><i style="background:color-mix(in srgb,#f0b94a 40%,var(--surface))"></i>Some time</span><span><i style="background:color-mix(in srgb,#ff8f7d 45%,var(--surface))"></i>Booked up</span>'));
+  R.appendChild(tw.p);
+
+  /* ---- Incoming Email ---- */
+  var ib = dashPanel('Incoming Email', 'scheduling@mismo.org', 'All Email', function () { go('inbox'); });
+  inbox.slice(0, 5).forEach(function (x) {
+    var req = x.reqId ? getReq(x.reqId) : null;
+    ib.rows.appendChild(dashRow({ cls: 'r3', k: x.status === 'started' ? '#5fd39a' : x.status === 'dismissed' ? '#9fb3c8' : '#f0b94a', nm: x.subject || '(no subject)', small: displayName(x) + (x.robotNote ? ' · ' + x.robotNote : ''), age: shortAgo(x.receivedAt || now), go: function () { if (req) go(null, req.id); else go('inbox'); } }));
+  });
+  if (!inbox.length) ib.p.appendChild(el('div', 'empty', 'Nothing has come in yet. Emails to scheduling@mismo.org show here a few minutes after they arrive.'));
+  R.appendChild(ib.p);
+
+  /* ---- What the Scheduler did ---- */
+  var ac = dashPanel('Latest Activity', '', '', null), feed = el('div', 'feed');
+  var events = [];
+  all.forEach(function (r) { (r.log || []).forEach(function (e) { events.push({ r: r, e: e }); }); });
+  events.sort(function (a, b) { return (b.e.at || 0) - (a.e.at || 0); }).slice(0, 14).forEach(function (x) {
+    var f = el('div', 'fi'); f.innerHTML = '<span>' + esc(shortAgo(x.e.at || now)) + '</span><div><b>' + esc(x.r.title || 'Meeting request') + '</b> <em>· ' + esc(x.e.what) + (x.e.by && x.e.by !== 'Scheduler' ? ' (' + esc(first(x.e.by)) + ')' : '') + '</em></div>';
+    f.onclick = function () { go(null, x.r.id); }; feed.appendChild(f);
+  });
+  if (!events.length) feed.appendChild(el('div', 'empty', 'What the Scheduler does shows here as it happens.'));
+  ac.rows.appendChild(feed); R.appendChild(ac.p);
+  /* keep the two columns level: show as much activity as the left column has room for */
+  requestAnimationFrame(function () {
+    if (getComputedStyle(grid).gridTemplateColumns.split(' ').length < 2) { while (feed.children.length > 6) feed.removeChild(feed.lastChild); return; }
+    /* measure at natural height (the columns stretch to match afterwards) */
+    grid.style.alignItems = 'start'; L.style.height = R.style.height = 'auto';
+    $$('.panel', grid).forEach(function (p) { p.style.flex = '0 0 auto'; });
+    while (feed.children.length > 3 && R.offsetHeight > L.offsetHeight + 4) feed.removeChild(feed.lastChild);
+    grid.style.alignItems = ''; L.style.height = R.style.height = '';
+    $$('.panel', grid).forEach(function (p) { p.style.flex = ''; });
+  });
+}
+
+/* ======================================================================
+   HELP — the full documentation, one topic at a time, the Membership Desk way
+   ====================================================================== */
+var HELP_STEPS = function (rows) { return '<div class="hsteps">' + rows.map(function (r, i) { return '<div class="hstep"><b class="n">' + (i + 1) + '</b><strong>' + r[0] + '</strong><span>' + r[1] + '</span></div>'; }).join('') + '</div>'; };
+var HELP_FAQ = function (rows) { return '<div class="hfaq">' + rows.map(function (r) { return '<div><b>' + r[0] + '</b><span>' + r[1] + '</span></div>'; }).join('') + '</div>'; };
+var HELP = [
+  { id: 'overview', k: '#74bfeb', t: 'Overview', h: function () { return '<h2>What the Scheduler Does</h2><p class="lead">The Scheduler finds a meeting time that works for people inside and outside MISMO, like Doodle but on its own. Anyone can email a request to <b>scheduling@mismo.org</b>. The Scheduler reads it, checks everyone’s Outlook, offers times, keeps the poll current and books the meeting. You and Vanessa only step in to approve a time or when something needs a person.</p>' +
+    HELP_STEPS([['An Email Comes In', 'Someone emails scheduling@mismo.org, or forwards a request there. Within about five minutes the Scheduler reads it with Claude: who should meet, for how long, and any times they suggested.'],
+      ['Their Times Come First', 'If everyone from MISMO is free at a time they suggested, and nobody else has to agree, that time is held for approval.'],
+      ['Otherwise a Poll', 'Each outside guest gets their own link to the times when everyone at MISMO is free. The person who asked is copied.'],
+      ['You Approve, It Books', 'When a time works for everyone, you or Vanessa approve it on the Dashboard. Everyone gets a confirmation, and the organizer gets a ready-filled Outlook invite to send.']]) +
+    '<div class="hnote"><b>Nothing goes to anyone outside MISMO as “booked” until you or Vanessa approve it.</b> Meetings with MISMO people only are booked straight away, because there is nobody outside to tell.</div>' +
+    '<h3>Who Uses It</h3><ul><li><b>Vanessa</b> looks after scheduling day to day: she approves times, sends the calendar invites and gets the Needs a Look emails.</li><li><b>Jonna</b> can approve too, and is copied on every email that goes to staff.</li><li><b>Everyone on the team</b> can open the Scheduler, see every request and run one by hand. Access is set in People &amp; Access, like every other tool.</li></ul>'; } },
+  { id: 'flow', k: '#5fd39a', t: 'How a Request Flows', h: function () { return '<h2>From Email to Booked Meeting</h2><p class="lead">Every request moves through the same stages. Its stage shows as the colored tag on the request.</p>' +
+    '<table><thead><tr><th>Stage</th><th>What is happening</th><th>What you do</th></tr></thead><tbody>' +
+    '<tr><td><b>Working on It</b></td><td>The Scheduler has read the email and is checking Outlook.</td><td>Nothing.</td></tr>' +
+    '<tr><td><b>Waiting on Replies</b></td><td>A poll is out. Times come off when someone at MISMO gets busy or a guest says no; new times are added when fewer than two are left. Guests who haven’t answered get a reminder after two working days, twice.</td><td>Nothing. It shows under Polls Out on the Dashboard.</td></tr>' +
+    '<tr><td><b>Waiting for Approval</b></td><td>A time works for everyone. It is held, so no other request can take it.</td><td>Approve it, or press Book under a different time.</td></tr>' +
+    '<tr><td><b>Booked</b></td><td>Everyone has the confirmation.</td><td>The organizer sends the calendar invite with the Zoom link, using the button in the Booked email or on the request.</td></tr>' +
+    '<tr><td><b>Needs a Look</b></td><td>The Scheduler stopped and told Vanessa why.</td><td>Fix what’s needed, then Hand Back to the Scheduler, or carry on by hand.</td></tr>' +
+    '<tr><td><b>Cancelled</b></td><td>Stopped for good.</td><td>Bring it back from the request if needed.</td></tr></tbody></table>' +
+    '<h3>Rules It Follows</h3><ul><li>Times are offered 9:00 AM to 5:00 PM Eastern, on working days only. Fridays between Memorial Day and Labor Day end at 1:00 PM.</li><li>MISMO holidays are never offered: MLK Day, Presidents’ Day, Memorial Day, Juneteenth, Independence Day, Labor Day, Veterans Day, Thanksgiving and the day after, and Winter Break.</li><li>A poll offers up to six times over the coming working days, at most two a day, starting the next working day.</li><li>Tentative in Outlook counts as busy when offering new times.</li><li>If Outlook information is missing or more than six hours old, nothing is decided until it is fresh. If it stays missing for a working day, Vanessa is told.</li><li>After three sets of times with no match, a person takes over.</li></ul>'; } },
+  { id: 'approve', k: '#ff8f7d', t: 'Approving a Time', h: function () { return '<h2>Approving a Time</h2><p class="lead">When the Scheduler finds a time that works for everyone, Vanessa gets an <b>Approve a Time</b> email with Jonna copied, and the request appears at the top of <b>Needs You</b> on the Dashboard.</p>' +
+    HELP_STEPS([['Open the Dashboard', 'The time waiting for approval is the first row under Needs You, with why it was picked.'], ['Approve', 'Press Approve on the row, or open the request and press Approve This Time. Only Vanessa and Jonna see the button.'], ['Or Pick Another Time', 'Open the request and press Book under any other time in the grid. That counts as approving that time instead.'], ['Send the Invite', 'Within a few minutes everyone gets the confirmation. Vanessa gets a Booked email with a Send the Calendar Invite button that opens Outlook with the time and everyone’s addresses filled in. Add the Zoom link and send.']]) +
+    '<div class="hnote"><b>If Outlook changes before you approve</b> (someone books that time), the Scheduler lets the held time go and finds another. Nothing has gone to the guests, so there is nothing to take back.</div>'; } },
+  { id: 'polls', k: '#a78bfa', t: 'Polls and Guests', h: function () { return '<h2>What Guests See</h2><p class="lead">Each guest gets an email from MISMO Scheduling with one button: <b>Choose the Times That Work</b>. The times are not listed in the email, so they are always current when the guest opens the link.</p>' +
+    '<ul><li>The link opens a MISMO page with the meeting, its length and where it is. The guest ticks ✓ for times that work and ✗ for the ones that don’t, can add a note, and presses Send.</li><li>Times show in the guest’s own time zone, and they can switch it.</li><li>Each link belongs to one guest. It never shows other guests or their answers.</li><li>Guests can come back to the same link to change their answers until the meeting is booked.</li><li>If new times are added after a guest answered, that guest gets a short <b>New Times</b> email.</li></ul>' +
+    '<h3>When a Guest Replies by Email</h3><p class="lead">Their reply lands in scheduling@mismo.org, shows in the request’s history, and Vanessa gets a <b>Reply About</b> email. If they gave times in the reply, open the request and press <b>Enter their answer</b> next to their name.</p>'; } },
+  { id: 'dash', k: '#f0b94a', t: 'The Dashboard', h: function () { return '<h2>Reading the Dashboard</h2><p class="lead">Everything is on one page. Click any row to open it in the panel on the right; press × or Escape to close it.</p>' +
+    '<table><thead><tr><th>Part</th><th>What it shows</th></tr></thead><tbody>' +
+    '<tr><td><b>The Banner</b></td><td>What needs you, polls out, and meetings booked this week. The ring shows how many of the last 30 days’ requests are booked.</td></tr>' +
+    '<tr><td><b>Needs You</b></td><td>Times to approve, requests the Scheduler stopped on, and people to follow up with on requests run by hand.</td></tr>' +
+    '<tr><td><b>Polls Out</b></td><td>Every poll waiting on guests: who has answered, how many times are on offer, and reminders sent.</td></tr>' +
+    '<tr><td><b>Booked This Week</b></td><td>Meetings booked in the last seven days, automatic and by hand.</td></tr>' +
+    '<tr><td><b>Emails This Week</b></td><td>Everything that reached scheduling@mismo.org, and how many became requests.</td></tr>' +
+    '<tr><td><b>Coming Up</b></td><td>Booked meetings in the next two weeks.</td></tr>' +
+    '<tr><td><b>Team This Week</b></td><td>How much of each person’s day is free from 9 to 5 Eastern, from Outlook. Open Calendar for the half-hour view.</td></tr>' +
+    '<tr><td><b>Incoming Email</b></td><td>The latest emails and what the Scheduler did with each one.</td></tr>' +
+    '<tr><td><b>Latest Activity</b></td><td>Everything the Scheduler and the team did, newest first.</td></tr></tbody></table>' +
+    '<div class="hnote"><b>Search</b> is at the top of the menu on the left: it finds requests, people and emails.</div>'; } },
+  { id: 'hand', k: '#9fb3c8', t: 'Running One by Hand', h: function () { return '<h2>Running a Request Yourself</h2><p class="lead">Any request can be run by hand, and any request you start by hand can be given to the Scheduler.</p>' +
+    HELP_STEPS([['Start a Request', 'Press Start a Request in the banner. Paste the email and press Read it for me, or fill it in.'], ['Pick Times', 'A calendar shows when the MISMO people are free in Outlook. Click the times to offer.'], ['Send the Poll', 'Each guest gets the same branded poll email from scheduling@mismo.org, with their own link.'], ['Book', 'Press Book under the time that works. Then send the invite and, if you like, Draft the confirmation email.']]) +
+    '<ul><li><b>Take Over</b> on an automatic request stops the Scheduler emailing about it; you carry on by hand.</li><li><b>Let the Scheduler Handle It</b> (or <b>Hand Back to the Scheduler</b> on a Needs a Look) gives it back. It picks up within a few minutes.</li><li>Requests run by hand show in <b>Follow Up</b> when a guest is due a nudge, and add a follow-up task to the organizer’s Team HQ board.</li></ul>'; } },
+  { id: 'emails', k: '#5fd39a', t: 'Emails It Sends', h: function () { return '<h2>Every Email, Who Gets It and When</h2><p class="lead">All of them come from <b>MISMO Scheduling</b> (scheduling@mismo.org) in the MISMO email frame. Replies come back to scheduling@mismo.org.</p>' +
+    '<table><thead><tr><th>Email</th><th>Goes to</th><th>When</th></tr></thead><tbody>' +
+    '<tr><td><b>We’re Working on Your Meeting Request</b></td><td>The person who asked</td><td>Only when nothing else reaches them straight away, for example while a time waits for approval.</td></tr>' +
+    '<tr><td><b>Finding a Time for …</b></td><td>Each outside guest, the person who asked copied</td><td>When a poll goes out.</td></tr>' +
+    '<tr><td><b>New Times for …</b></td><td>Guests who already answered</td><td>When new times are added.</td></tr>' +
+    '<tr><td><b>Reminder: Finding a Time for …</b></td><td>A guest who hasn’t answered</td><td>After two working days, at most twice.</td></tr>' +
+    '<tr><td><b>Approve a Time</b></td><td>Vanessa, Jonna copied</td><td>When a time works for everyone.</td></tr>' +
+    '<tr><td><b>Confirmed: … on …</b></td><td>The guests and the person who asked, MISMO attendees copied</td><td>Once a time is approved.</td></tr>' +
+    '<tr><td><b>Booked, Send the Invite</b></td><td>Vanessa, Jonna copied</td><td>Once a time is approved, with the Outlook invite button.</td></tr>' +
+    '<tr><td><b>Needs a Look</b></td><td>Vanessa, Jonna copied</td><td>When the Scheduler stops on a request.</td></tr>' +
+    '<tr><td><b>Reply About …</b></td><td>Vanessa, Jonna copied</td><td>When someone replies to a Scheduler email.</td></tr></tbody></table>' +
+    '<p class="lead">Every email the Scheduler sent for a request is listed on that request, with whether it went out.</p>'; } },
+  { id: 'look', k: '#f0b94a', t: 'When It Stops', h: function () { return '<h2>Needs a Look</h2><p class="lead">The Scheduler stops and emails Vanessa, with Jonna copied, rather than guess. The request shows the reason at the top.</p>' +
+    '<table><thead><tr><th>Why it stopped</th><th>What to do</th></tr></thead><tbody>' +
+    '<tr><td>The email doesn’t say who from MISMO should be in the meeting</td><td>Edit details, tick the MISMO people, then Hand Back to the Scheduler.</td></tr>' +
+    '<tr><td>The person who asked isn’t on the guest list</td><td>Edit details and add them as a guest, then hand it back.</td></tr>' +
+    '<tr><td>It was read without Claude</td><td>Check the details are right, then hand it back. This only happens if Claude can’t be reached.</td></tr>' +
+    '<tr><td>Three sets of times went out and none worked</td><td>Talk to the guests, pick times by hand, or hand it back to try again.</td></tr>' +
+    '<tr><td>A guest hasn’t answered after two reminders</td><td>Reach out yourself, or Enter their answer if they replied another way.</td></tr>' +
+    '<tr><td>No time in the next three weeks when everyone from MISMO is free</td><td>Free up a calendar or offer times by hand.</td></tr>' +
+    '<tr><td>Outlook information missing for a working day</td><td>Tell Jonna: the Team Availability flow in Power Automate may have stopped.</td></tr>' +
+    '<tr><td>An email failed five times</td><td>Tell Jonna: the Send Emails flow in Power Automate may need attention.</td></tr></tbody></table>'; } },
+  { id: 'behind', k: '#14486e', t: 'Behind the Scenes', h: function () { return '<h2>How It’s Put Together</h2><p class="lead">For Jonna, and for anyone looking after the Scheduler later.</p>' +
+    '<table><thead><tr><th>Piece</th><th>What it does</th><th>Where it lives</th></tr></thead><tbody>' +
+    '<tr><td><b>Email Watcher</b></td><td>Passes every new email in scheduling@mismo.org to the Scheduler on GitHub, within about five minutes.</td><td>Power Automate, “Scheduler - Email Watcher” (Jonna’s license). Needs its GitHub key in the Authorization header.</td></tr>' +
+    '<tr><td><b>The Scheduler Robot</b></td><td>Reads emails with Claude, decides, keeps polls current, books, and sends the emails. Runs on every new email, every guest answer or save, and every two hours on working days.</td><td>GitHub: GitMISMO/scheduler-data, robot folder and the Actions tab.</td></tr>' +
+    '<tr><td><b>Send Emails</b></td><td>Sends each email from scheduling@mismo.org.</td><td>Power Automate, “Scheduler - Send Emails”. Its address is the FLOW_SEND_URL secret.</td></tr>' +
+    '<tr><td><b>Team Availability</b></td><td>Copies everyone’s free/busy from Outlook every half hour. Free or busy only, never meeting names.</td><td>Power Automate, “Scheduler - Team Availability”.</td></tr>' +
+    '<tr><td><b>Claude</b></td><td>Reads each email. Picks the newest Sonnet model on MISMO’s account.</td><td>The ANTHROPIC_API_KEY secret, billed to MISMO’s API credit (a penny or two per email).</td></tr>' +
+    '<tr><td><b>This Page and the Guest Page</b></td><td>The Dashboard, and the page guests open from their link.</td><td>GitHub: GitMISMO/scheduler, at resources.mismo.org/scheduler/.</td></tr></tbody></table>' +
+    '<h3>Good to Know</h3><ul><li><b>Leave new emails in scheduling@mismo.org for about five minutes.</b> The Email Watcher checks every few minutes; an email cleared before then is never seen.</li><li>If something seems stuck, open the Actions tab in GitMISMO/scheduler-data. Each run says what it did, and Run workflow starts one by hand.</li><li>Changes go through pull requests that Jonna merges.</li><li>Guest links are switched on in the site’s settings file (projects.json) with guestLinks.</li></ul>'; } },
+  { id: 'faq', k: '#74bfeb', t: 'Questions', h: function () { return '<h2>Questions</h2><p class="lead">Anything else: ask Jonna Critchley.</p>' + HELP_FAQ([
+    ['Can I forward a request from my own inbox?', 'Yes. Forward it to scheduling@mismo.org and say who should attend. Your Outlook can also do it for you with a rule.'],
+    ['Does the Scheduler send the calendar invite?', 'Not yet. It sends the confirmation and gives Vanessa a button that opens a ready-filled Outlook invite to add the Zoom link and send.'],
+    ['What time zone are times in?', 'MISMO always works in Eastern time. Guests see times in their own zone and can change it. On this page, pick the zone in the Calendar.'],
+    ['Can I change a meeting’s name before it’s confirmed?', 'Yes. Open the request and press Edit details. The name is used in every email after that.'],
+    ['Why didn’t someone get the “working on it” email?', 'If the poll or a confirmation reached them straight away, that is their acknowledgment. They only get it when there is a wait.'],
+    ['Can two requests book the same person at the same time?', 'No. A booked time, and a time waiting for approval, counts as busy for every other request straight away, before Outlook catches up.'],
+    ['What if a guest says none of the times work?', 'Those times come off, new ones are added, and the guest is told. After three sets, a person takes over.'],
+    ['Is anyone’s calendar shown to guests?', 'No. Guests only see times when everyone from MISMO is free. Meeting names never leave Outlook.']]); } }
+];
 function viewHelp(app) {
-  var p = el('section', 'panel'), b = el('div', 'panel-b help'); p.appendChild(b);
-  b.innerHTML =
-    '<h2>The idea</h2><p>The Scheduler finds a meeting time that works for people inside and outside MISMO. Requests emailed to scheduling@mismo.org run on their own:</p>' +
-    '<div id="help-flow"></div>' +
-    '<p>It stops and emails Vanessa (<b>Needs a Look</b>) when the email doesn\u2019t say who from MISMO should attend, when three sets of times haven\u2019t worked, when a guest hasn\u2019t answered after two reminders, or when anything else needs a person. Press <b>Take Over</b> on any request to run it by hand instead. The steps below are for requests run by hand.</p>' +
-    '<h2>Step by step</h2><ol>' +
-    '<li><b>Incoming.</b> Meeting requests emailed to scheduling@mismo.org show up here by themselves (once the email watcher is switched on). To have ones sent to you show up too, set an Outlook rule that redirects them to scheduling@mismo.org. Press <b>Start a request</b> and Claude reads the email for you, or <b>Draft a reply</b> to answer the person who asked.</li>' +
-    '<li><b>New Request.</b> Paste the email that asked for the meeting and press <b>Read it for me</b> \u2014 it fills in the name, who\u2019s coming from MISMO and who\u2019s coming from outside. Check it and save.</li>' +
-    '<li><b>Pick times.</b> A calendar opens showing when the MISMO people are free in Outlook (green). Click 3\u20136 start times, or press <b>Suggest 5 good times</b>.</li>' +
-    '<li><b>Draft the invitation email.</b> Claude writes it with the times listed. Press <b>Open in Outlook</b>, look it over, send it \u2014 then press <b>I sent it</b> and pick the day you sent it (today unless you\u2019re catching up). The follow-up clock counts from that day.</li>' +
-    '<li><b>Collect answers.</b> ' + (LINKS.live ? 'Each outside guest gets a private link where they tick the times that work; their answers appear here by themselves and you get an email. ' : '') + 'If someone replies by email, press <b>Enter their answer</b> and click Works / Can\u2019t for each time.</li>' +
-    '<li><b>Follow up.</b> If someone hasn\u2019t answered after the wait you chose (3 business days unless changed), they show on the <b>Follow Up</b> tab, and a \u201cFollow up\u201d task lands on your Team HQ board that day. Press <b>Draft follow-up email</b>.</li>' +
-    '<li><b>Book it.</b> The grid highlights the best time. Press <b>Book</b>, then <b>Create the invite in Outlook</b> to send the real calendar invite, and <b>Draft the confirmation email</b> if you want one.</li></ol>' +
-    '<h2>Good to know</h2><ul>' +
-    '<li>Everyone with access sees every request, so the team can cover for each other. Use <b>Mine</b> to see just yours.</li>' +
-    '<li>Outlook availability comes from the same place as Team HQ\u2019s \u201cWho is doing what.\u201d Anyone whose Outlook isn\u2019t connected shows as \u201cDon\u2019t know\u201d \u2014 click their squares in the grid to fill them in.</li>' +
-    '<li>Times show in the time zone you pick; emails list times in Eastern unless you choose another.</li>' +
-    '<li>Requests that arrive by email are run by the Scheduler itself and marked <b>Automatic</b>; it sends its emails from scheduling@mismo.org in the MISMO frame. Requests you start by hand stay yours unless you press <b>Let the Scheduler Handle It</b>.</li>' +
-    '<li>Access (Edit or View) is given in the admin panel\u2019s People &amp; Access, like every other tool. Ask Perry.</li></ul>';
-  app.appendChild(p);
-  var hf = $('#help-flow', p); if (hf) hf.appendChild(howItRuns());
+  var head = el('div', 'pagehead'); head.innerHTML = '<div class="grow"><h1>Help</h1><p>How the Scheduler works, step by step. Questions: Jonna Critchley.</p></div>';
+  app.appendChild(head);
+  var cur = STATE.help || 'overview', grid = el('div', 'helpgrid'), nav = el('nav', 'helpnav'), body = el('div', 'panel helpbody');
+  nav.setAttribute('aria-label', 'Help topics');
+  HELP.forEach(function (t) {
+    var b = el('button', null, '<i style="--k:' + t.k + '"></i>' + esc(t.t)); b.type = 'button';
+    if (t.id === cur) b.setAttribute('aria-current', 'true');
+    b.onclick = function () { STATE.help = t.id; render({ full: true }); };
+    nav.appendChild(b);
+  });
+  body.innerHTML = (HELP.filter(function (t) { return t.id === cur; })[0] || HELP[0]).h();
+  grid.appendChild(nav); grid.appendChild(body); app.appendChild(grid);
 }
 
 /* ======================================================================
@@ -2747,7 +3211,6 @@ function alertDue() {
 
 function start() {
   readHash();
-  if (!location.hash) STATE.tab = inboxNew().length ? 'inbox' : followList(true).length ? 'follow' : 'list';
   render();
   Promise.all([linksLive(), askReady()]).then(render);
   setInterval(function () { if (!document.hidden) { render(); alertDue(); } }, 10 * 60000);
@@ -2989,7 +3452,7 @@ Object.defineProperty(window,'INBOX',{get:function(){return window.__sched.INBOX
 
 /* --- rail buttons drive the page's own router --- */
 (function railroute(){
-  var RAIL_TABS=['inbox','follow','list','new','help'];
+  var RAIL_TABS=['dash','help'];
   function mark(tab){
     document.querySelectorAll('.rail nav button[data-hq], #help-btn[data-hq]').forEach(function(b){
       if(b.getAttribute('data-hq')===tab) b.setAttribute('aria-current','page');
@@ -2998,7 +3461,7 @@ Object.defineProperty(window,'INBOX',{get:function(){return window.__sched.INBOX
   }
   function open(tab){
     if(window.go) window.go(tab);
-    mark(tab);
+    mark(tab === 'help' ? 'help' : 'dash');
   }
   document.addEventListener('click',function(e){
     var b=e.target.closest && e.target.closest('[data-hq]');
@@ -3009,7 +3472,7 @@ Object.defineProperty(window,'INBOX',{get:function(){return window.__sched.INBOX
   window.addEventListener('popstate',function(){ sync(); });
   function sync(){
     var s=window.__sched && window.__sched.STATE;
-    if(s && s.tab) mark(s.tab);
+    if(s && s.tab) mark(s.tab === 'help' ? 'help' : 'dash');
   }
   setTimeout(sync,0);
   setInterval(counts, 1200);
