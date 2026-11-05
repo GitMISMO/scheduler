@@ -222,7 +222,7 @@ c57 -33 76 -84 76 -200 0 -116 -19 -167 -76 -200 -32 -19 -52 -20 -294 -20
     if (d.answer) d.slots.forEach(function (s) { if (!ans[s.id] && s.added && d.answer.at && s.added <= d.answer.at + 15 * 60000) ans[s.id] = 'no'; });
     $('title').textContent = d.title;
     $('lede').textContent = 'Hi ' + (String(d.guest || '').split(/\s+/)[0] || 'there') + ' — ' + (d.organizer || 'MISMO') + ' is finding a time for this meeting. Tick ✓ for the times that work and ✗ for the ones that don’t, then press Send.';
-    $('facts').innerHTML = '<span>' + esc(d.duration || 30) + ' minutes</span>' + (d.where ? '<span>' + esc(d.where) + '</span>' : '') + (d.purpose ? '<span style="flex-basis:100%">' + esc(d.purpose) + '</span>' : '');
+    $('facts').innerHTML = '<span>' + esc(d.duration || 30) + ' minutes</span>' + (d.where ? '<span>' + esc(d.where) + '</span>' : '') ;
     $('msg').value = (d.answer && d.answer.note) || '';
     if (d.answer) $('state').innerHTML = '<div class="note ok">You answered on ' + esc(new Date(d.answer.at).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })) + '. Change anything below and send again.</div>';
     paintTz(); paintSlots();
