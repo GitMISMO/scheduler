@@ -924,7 +924,177 @@ function noAccess(e) {
 }
 
 /* ---------------- the requests: read, keep, save ---------------- */
-var DB = { server: { docs: {} }, sha: null, loaded: false, pending: {}, flushing: false, timer: null, problem: '' };
+var DB = { server: { docs: {} }, sha: null, loaded: false, pending: {}, flushing: false, timer: null, problem: '', from: {} };
+
+  /* ---- saving without overwriting anyone (November 5, 2026) ----------------------------
+     (The Scheduler already kept a guest's answer, the robot's notes and the log; see
+     keepGuestAnswers below. This covers everything else a staff member changes.)
+     A save used to send the whole record exactly as this page had it. If the page had
+     been open a while, or someone else saved in the moment before, their change was
+     quietly put back. Now a save carries only what was changed here: it is laid over the
+     newest copy at the moment it is written (and again if the relay says someone saved
+     first), and everything this page did not change keeps its newest value.
+       - Records inside a list are matched by their id, so two people changing different
+         rows both keep their change, a row added by either is kept, and a row someone
+         else removed stays removed unless it was changed here.
+       - Running notes kept as text (log, notes) keep both people's additions.
+       - When both changed the very same value, the newer save (this one) wins, unless
+         the person saving says to keep theirs when asked. */
+  var MG_LOGS = { log: true, notes: true };
+  var MG_QUIET = /^(updatedAt|updatedBy|savedAt|savedBy|createdAt|createdBy|updated)$/;   /* when it was saved, and by whom */
+  function mgObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
+  function mgHas(o, k) { return !!o && Object.prototype.hasOwnProperty.call(o, k); }
+  function mgCopy(v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); }
+  /* "", null and nothing are the same; 5 and "5" are the same */
+  function mgNorm(v) {
+    if (v === undefined || v === null || v === '') return '';
+    if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+    if (typeof v === 'string') return v;
+    return JSON.stringify(v);
+  }
+  function mgSame(x, y) {
+    if (x === y) return true;
+    if (mgObj(x) && mgObj(y)) {
+      var k, seen = {};
+      for (k in x) if (mgHas(x, k)) { seen[k] = 1; if (!mgSame(x[k], y[k])) return false; }
+      for (k in y) if (mgHas(y, k) && !seen[k] && !mgSame(x[k], y[k])) return false;
+      return true;
+    }
+    if (Array.isArray(x) && Array.isArray(y)) {
+      if (x.length !== y.length) return false;
+      for (var i = 0; i < x.length; i++) if (!mgSame(x[i], y[i])) return false;
+      return true;
+    }
+    if ((x && typeof x === 'object') || (y && typeof y === 'object')) return false;
+    return mgNorm(x) === mgNorm(y);
+  }
+  /* what a row in a list is called in a question, and how it is matched */
+  function mgName(x, i) {
+    if (mgObj(x)) { var n = x.title || x.name || x.task || x.text || x.nm || x.full || x.email || x.id; if (n) return String(n).slice(0, 40); }
+    return typeof x === 'string' ? x.slice(0, 40) : '#' + (i + 1);
+  }
+  function mgIdKey(x) { return mgObj(x) && x.id !== undefined && x.id !== null && x.id !== '' ? 'i:' + x.id : null; }
+  function mgJsonKey(x) { return x === undefined ? null : 'j:' + JSON.stringify(x); }
+  function mgIndex(lists, keyFn) {
+    var out = [];
+    for (var a = 0; a < lists.length; a++) {
+      var m = {}, order = [];
+      for (var i = 0; i < lists[a].length; i++) {
+        var k = keyFn(lists[a][i]);
+        if (k === null || mgHas(m, k)) return null;
+        m[k] = lists[a][i]; order.push(k);
+      }
+      out.push({ m: m, order: order });
+    }
+    return out;
+  }
+  function mgList(C, M, B, path, ctx) {
+    var common = function (x, y) { return x.order.filter(function (k) { return mgHas(y.m, k); }).join('\u0001'); };
+    var reordered = common(M, B) !== common(B, M);      /* the order was changed here: this order stands */
+    var lead = reordered ? M : C, rest = reordered ? C : M, out = [], keys = [], done = {};
+    var one = function (k) {
+      done[k] = 1;
+      var b = mgHas(B.m, k), m = mgHas(M.m, k), c = mgHas(C.m, k), src = c ? C.m[k] : M.m[k];
+      if (b && m && c) return { v: mgValue(C.m[k], M.m[k], B.m[k], path.concat(mgName(src, 0)), ctx) };
+      if (b && m) return mgSame(M.m[k], B.m[k]) ? null : { v: mgCopy(M.m[k]) };   /* removed there: back only if changed here */
+      if (b) return null;                                                         /* removed here */
+      if (m && c) return { v: mgValue(C.m[k], M.m[k], undefined, path.concat(mgName(src, 0)), ctx) };
+      return { v: mgCopy(src) };                                                  /* added on one side */
+    };
+    lead.order.forEach(function (k) { var r = one(k); if (r) { out.push(r.v); keys.push(k); } });
+    rest.order.forEach(function (k, i) {
+      if (done[k]) return;
+      var r = one(k); if (!r) return;
+      /* a row added at the end goes at the end; one added in between goes after the row
+         it followed on its own side */
+      var at = out.length, between = false;
+      for (var q = i + 1; q < rest.order.length && !between; q++) between = keys.indexOf(rest.order[q]) >= 0;
+      if (between) {
+        at = 0;
+        for (var j = i - 1; j >= 0; j--) { var p = keys.indexOf(rest.order[j]); if (p >= 0) { at = p + 1; break; } }
+      }
+      out.splice(at, 0, r.v); keys.splice(at, 0, k);
+    });
+    return out;
+  }
+  function mgValue(cur, mine, base, path, ctx) {
+    if (mgSame(mine, base)) return mgCopy(cur);                     /* not changed here: the newest value stands */
+    if (mgSame(cur, base) || mgSame(cur, mine)) return mgCopy(mine);
+    var last = path.length ? String(path[path.length - 1]) : '';
+    if (MG_LOGS[last] && typeof cur === 'string' && typeof mine === 'string' && (base == null || typeof base === 'string')) {
+      var b0 = base || '';
+      if (mine.indexOf(b0) === 0 && cur.indexOf(b0) === 0) {                                      /* both added to the end */
+        var add = mine.slice(b0.length);
+        return cur + (cur && !/\s$/.test(cur) && !/^\s/.test(add) ? '\n' : '') + add;
+      }
+    }
+    if (mgObj(cur) && mgObj(mine) && (mgObj(base) || base == null)) {
+      var b = mgObj(base) ? base : {}, out = mgCopy(cur), keys = {}, k;
+      for (k in mine) if (mgHas(mine, k)) keys[k] = 1;
+      for (k in b) if (mgHas(b, k)) keys[k] = 1;
+      Object.keys(keys).forEach(function (k) {
+        if (mgSame(mine[k], b[k])) return;
+        if (!mgHas(mine, k)) { delete out[k]; return; }                               /* taken out here */
+        if (!mgHas(cur, k) && mgHas(b, k)) { out[k] = mgCopy(mine[k]); return; }      /* taken out there, changed here */
+        var v = mgValue(cur[k], mine[k], b[k], path.concat(k), ctx);
+        if (v === undefined) delete out[k]; else out[k] = v;
+      });
+      return out;
+    }
+    if (Array.isArray(cur) && Array.isArray(mine) && (Array.isArray(base) || base == null)) {
+      var bl = Array.isArray(base) ? base : [], ix = mgIndex([cur, mine, bl], mgIdKey);
+      if (ix && (cur.length || mine.length)) return mgList(ix[0], ix[1], ix[2], path, ctx);
+      /* plain values (names, ticks, pairs) are a set: what was added or taken out on each side */
+      var plain = function (a) { return a.every(function (x) { return !mgObj(x); }); };
+      if (plain(cur) && plain(mine) && plain(bl) && (ix = mgIndex([cur, mine, bl], mgJsonKey))) return mgList(ix[0], ix[1], ix[2], path, ctx);
+      if (cur.length === mine.length && mine.length === bl.length)
+        return cur.map(function (c, i) { return mgValue(c, mine[i], bl[i], path.concat(mgName(c, i)), ctx); });
+      ix = mgIndex([cur, mine, bl], mgJsonKey);
+      if (ix) return mgList(ix[0], ix[1], ix[2], path, ctx);
+    }
+    /* both changed this very value */
+    var key = path.join(' › ');
+    if (ctx && ctx.theirs && ctx.theirs[key]) return mgCopy(cur);
+    if (ctx && ctx.clashes && !MG_QUIET.test(last) && !(ctx.quiet && ctx.quiet.test(key)))
+      ctx.clashes.push({ key: key, theirs: cur, mine: mine });
+    return mgCopy(mine);
+  }
+  /* one whole document: `base` is the copy the change started from (undefined: not known,
+     so it is written as sent, the way it always was) */
+  function mgDoc(cur, mine, base, ctx) {
+    if (base === undefined || base === null || mine === null || mine === undefined) return mgCopy(mine);
+    if (cur === null || cur === undefined) return mgSame(mine, base) ? null : mgCopy(mine);   /* removed by someone else */
+    if (mgSame(cur, base)) return mgCopy(mine);                                                 /* nobody else saved: exactly as sent */
+    return mgValue(cur, mine, base, [], ctx);
+  }
+  /* the question asked when both people changed the same thing; true keeps this page's */
+  function mgShow(v) { var t = mgObj(v) || Array.isArray(v) ? JSON.stringify(v) : mgNorm(v); return t === '' ? '(blank)' : t.slice(0, 80); }
+  function mgWord(k) { return String(k).replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, function (c) { return c.toUpperCase(); }); }
+  function mgAsk(what, clashes, labels) {
+    var word = function (k) { return labels && labels[k] ? labels[k] : mgWord(k); };
+    var list = clashes.slice(0, 8).map(function (c) {
+      return '• ' + c.key.split(' › ').map(word).join(' › ') + ' — theirs: ' + mgShow(c.theirs) + '   ·   yours: ' + mgShow(c.mine);
+    }).join('\n') + (clashes.length > 8 ? '\n• and ' + (clashes.length - 8) + ' more' : '');
+    var msg = 'While you had ' + what + ' open, someone else saved a different value in the same ' +
+      (clashes.length === 1 ? 'place' : 'places') + ':\n\n' + list +
+      '\n\nOK keeps yours. Cancel keeps theirs for ' + (clashes.length === 1 ? 'this one' : 'these') +
+      ' — your other changes still save.';
+    try { return window.confirm(msg); } catch (e) { return true; }
+  }
+
+/* Each request as this page has seen it, by its updatedAt: a change is made to a copy of one
+   of these, and that copy is what the change is compared with when it is saved. The guest's
+   answer, the robot's notes and the log are not asked about: keepGuestAnswers settles those. */
+var SEEN = {}, MY_STAMPS = {};
+var MG_SCHED_QUIET = /(^|\u203a )(log|robot|robotEdit|answer|sentAt|reminders)( \u203a|$)/;
+function noteSeen(r) {
+  if (!r || !r.id || r.updatedAt == null) return;
+  var m = SEEN[r.id] = SEEN[r.id] || {};
+  if (!m[r.updatedAt]) m[r.updatedAt] = clone(r);        /* the first copy seen under that stamp */
+  var ks = Object.keys(m); if (ks.length > 12) delete m[ks.sort(function (a, b) { return a - b; })[0]];
+}
+function seenFrom(r) { return r && r.id && r.updatedAt != null && SEEN[r.id] && SEEN[r.id][r.updatedAt] ? clone(SEEN[r.id][r.updatedAt]) : undefined; }
+
 function docs() {
   var all = Object.assign({}, DB.server.docs || {});
   Object.keys(DB.pending).forEach(function (id) {
@@ -946,14 +1116,31 @@ function loadReqs() {
     var before = JSON.stringify(DB.server.docs);
     DB.server = Object.assign({}, c, { docs: c.docs && typeof c.docs === 'object' ? c.docs : {} });
     DB.sha = (b && b.sha) || null; DB.loaded = true;
+    Object.keys(DB.server.docs).forEach(function (id) { noteSeen(DB.server.docs[id]); });
     restoreUnsaved();
     return before !== JSON.stringify(DB.server.docs);
   }, function (e) { noAccess(e); throw e; });
 }
 function put(req, why) {
   if (!canEdit()) { toast('You can look at the Scheduler but not change it. Ask Perry for Edit access.'); return Promise.reject(err('VIEW_ONLY')); }
+  /* November 5, 2026: the copy this change was made to, before it is stamped */
+  var from = seenFrom(req), had = DB.pending[req.id];
   req.updatedAt = Date.now(); req.updatedBy = me().name;
   if (why) { req.log = req.log || []; req.log.push({ at: Date.now(), by: me().name, what: why }); if (req.log.length > 80) req.log = req.log.slice(-80); }
+  if (from) {
+    /* laid over the newest copy this page has, so what someone else saved is kept; if they
+       changed the very same thing, ask which to keep (OK keeps this change) */
+    var latest = had || DB.server.docs[req.id] || null, ctx = { clashes: [], theirs: {}, quiet: MG_SCHED_QUIET };
+    var merged = mgDoc(latest, req, from, ctx);
+    if (ctx.clashes.length && !mgAsk('\u201c' + (req.title || 'this request') + '\u201d', ctx.clashes,
+        { title: 'Title', purpose: 'What It Is For', duration: 'Length', where: 'Where', status: 'Status', chosen: 'Chosen Time', slots: 'Times Offered', guests: 'Guests', internal: 'MISMO People', optional: 'Optional' })) {
+      ctx.clashes.forEach(function (c) { ctx.theirs[c.key] = 1; });
+      merged = mgDoc(latest, req, from, { clashes: [], theirs: ctx.theirs });
+    }
+    if (merged) { merged.updatedAt = req.updatedAt; merged.updatedBy = req.updatedBy; req = merged; }
+  }
+  if (!had && !Object.prototype.hasOwnProperty.call(DB.from, req.id)) DB.from[req.id] = from;
+  MY_STAMPS[req.updatedAt] = 1; noteSeen(req);
   DB.pending[req.id] = clone(req);
   keepUnsaved();
   render();
@@ -962,11 +1149,16 @@ function put(req, why) {
   clearTimeout(DB.timer); DB.timer = setTimeout(flush, 250);
   return Promise.resolve();
 }
-function drop(id) { DB.pending[id] = null; keepUnsaved(); if (PREVIEW) { delete DB.server.docs[id]; delete DB.pending[id]; } else { clearTimeout(DB.timer); DB.timer = setTimeout(flush, 250); } render(); }
-function keepUnsaved() { if (!PREVIEW) lsSet('unsaved:' + me().email, Object.keys(DB.pending).length ? DB.pending : null); }
+function drop(id) { DB.pending[id] = null; delete DB.from[id]; keepUnsaved(); if (PREVIEW) { delete DB.server.docs[id]; delete DB.pending[id]; } else { clearTimeout(DB.timer); DB.timer = setTimeout(flush, 250); } render(); }
+function keepUnsaved() {
+  if (PREVIEW) return;
+  var any = Object.keys(DB.pending).length;
+  lsSet('unsaved:' + me().email, any ? DB.pending : null);
+  lsSet('unsavedFrom:' + me().email, any ? DB.from : null);     /* the copies those changes started from */
+}
 function restoreUnsaved() {
   var kept = lsGet('unsaved:' + me().email, null);
-  if (kept && !Object.keys(DB.pending).length) { DB.pending = kept; saveState('Finishing an earlier save…'); clearTimeout(DB.timer); DB.timer = setTimeout(flush, 800); }
+  if (kept && !Object.keys(DB.pending).length) { DB.pending = kept; DB.from = lsGet('unsavedFrom:' + me().email, null) || {}; saveState('Finishing an earlier save…'); clearTimeout(DB.timer); DB.timer = setTimeout(flush, 800); }
 }
 var chain = Promise.resolve();
 
@@ -1050,15 +1242,26 @@ function flush() {
     return;
   }
   DB.flushing = true;
-  var batch = clone(DB.pending), ids = Object.keys(batch), tries = 0;
+  var batch = clone(DB.pending), from = clone(DB.from), ids = Object.keys(batch), tries = 0;
   function attempt() {
     var next = Object.assign({}, DB.server, { docs: Object.assign({}, DB.server.docs) });
     delete next.savedBy; delete next.savedAt;
-    ids.forEach(function (id) { if (batch[id] === null) delete next.docs[id]; else next.docs[id] = keepGuestAnswers(next.docs[id], batch[id]); });
+    ids.forEach(function (id) {
+      if (batch[id] === null) { delete next.docs[id]; return; }
+      /* November 5, 2026: only what was changed here goes over the copy on file (this is
+         run again on the newest copy when someone else saved first) */
+      var mine = from[id] ? mgDoc(next.docs[id] || null, batch[id], from[id], { clashes: [], theirs: {} }) : batch[id];
+      if (mine === null) return;              /* removed by someone else and not changed here */
+      next.docs[id] = keepGuestAnswers(next.docs[id], mine);
+    });
     if (JSON.stringify(next).length > 940000) return Promise.reject(err('TOO_BIG', 'The Scheduler’s file is nearly full. Ask Perry to archive old requests.'));
     return writeData(PROJECT, 'requests', next, DB.sha).then(function (b) {
       DB.server = next; DB.sha = (b && b.sha) || DB.sha;
-      ids.forEach(function (id) { if (JSON.stringify(DB.pending[id]) === JSON.stringify(batch[id])) delete DB.pending[id]; });
+      ids.forEach(function (id) {
+        if (JSON.stringify(DB.pending[id]) === JSON.stringify(batch[id])) { delete DB.pending[id]; delete DB.from[id]; }
+        else if (batch[id] !== null) DB.from[id] = clone(batch[id]);   /* changed again since: the rest goes next */
+        noteSeen(next.docs[id]);
+      });
       keepUnsaved();
     }, function (e) {
       if (e.status === 409 && tries < 6) { tries++; return new Promise(function (r) { setTimeout(r, 300 * tries + Math.random() * 400); }).then(loadReqs).then(attempt); }
@@ -2547,8 +2750,22 @@ function askDate(o) {
 }
 
 /* ---------------- editing a request ---------------- */
+/* November 5, 2026: a dialog left open says so when someone else saves its request */
+function watchDialog(D, req) {
+  var on = req && DB.server.docs[req.id], at = on ? on.updatedAt : null, said = false;   /* the copy on file as it opened */
+  var iv = setInterval(function () {
+    if (!document.body.contains(D.root)) { clearInterval(iv); return; }
+    var now = DB.server.docs[req.id];
+    if (said || !now || now.updatedAt == null || String(now.updatedAt) === String(at) || MY_STAMPS[now.updatedAt]) return;   /* not this page's own */
+    said = true;
+    var n = el('div', 'notice warn', 'Someone else just saved this request. Saving keeps their changes and adds yours.');
+    n.setAttribute('role', 'status'); n.style.marginBottom = '10px';
+    D.body.insertBefore(n, D.body.firstChild);
+  }, 3000);
+}
 function openEdit(req) {
   var D = dialog('Edit \u201c' + req.title + '\u201d', true);
+  watchDialog(D, req);
   D.foot.remove();
   D.body.appendChild(requestForm(req, function (r) { put(r, 'Edited the details'); D.close(); }, function () { D.close(); }));
 }
@@ -2557,6 +2774,7 @@ function openEdit(req) {
 function openPicker(req) {
   if (!req) return;
   var D = dialog('Pick the times to offer', true);
+  watchDialog(D, req);
   var dur = (+req.duration || 30) * 60000, STEP = 30;
   var picked = {}; (req.slots || []).forEach(function (s) { picked[s.s] = s.id; });
   var start = bizDaysAhead(1)[0], DAYS = 10;
