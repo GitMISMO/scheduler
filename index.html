@@ -3856,7 +3856,8 @@ function viewStats(app) {
       ['All working', green + ' (' + pctOf(green, hist.length) + ')'],
       ['Something stopped', bad.length + (bad.length ? ': ' + bad.slice(-3).map(function (d) { return fmtDay(at(d.date, 720, ET), ET) + ' (' + (d.issues || []).join(', ') + ')'; }).join('; ') : '')],
       ['Daily email test passed', loops.length ? loopOk + ' of ' + loops.length : 'Not run yet'],
-      ['Robot runs a day', runs.length ? Math.round(runs.reduce(function (a, d) { return a + d.runs; }, 0) / runs.length) + ' on average, ' + Math.max.apply(null, runs.map(function (d) { return d.runs; })) + ' at most' : '—']
+      ['Robot runs a day', runs.length ? Math.round(runs.reduce(function (a, d) { return a + d.runs; }, 0) / runs.length) + ' on average, ' + Math.max.apply(null, runs.map(function (d) { return d.runs; })) + ' at most' : '—'],
+      ['Robot last ran', HEALTH.data && HEALTH.data.lastRunAt ? whenAgo(HEALTH.data.lastRunAt) : '—']
     ];
     row(); L.appendChild(figsPanel('Reliability', 'from the health check', rows));
     var H = HEALTH.data || {}, st = (H.checks || {}).storage || {};
@@ -3865,7 +3866,8 @@ function viewStats(app) {
       ['Archived requests', Object.keys(ARCH.docs).length],
       ['Emails in the inbox file', inboxItems().length],
       ['Data storage', st.msg || '—'],
-      ['Claude model', H.claudeModel ? H.claudeModel + (H.modelPinned ? ' (pinned)' : '') : '—']
+      ['Claude model', H.claudeModel ? H.claudeModel + (H.modelPinned ? ' (pinned)' : '') : '—'],
+      ['Guest details kept', 'Two years, then removed from the archive']
     ]));
   }
 }
