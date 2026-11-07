@@ -3845,6 +3845,29 @@ function viewStats(app) {
     ['Asked by MISMO staff', reqs.filter(function (r) { return /@mismo\.org$/i.test(r.askedByEmail || ''); }).length],
     ['Asked by outside people', reqs.filter(function (r) { return r.askedByEmail && !/@mismo\.org$/i.test(r.askedByEmail); }).length]
   ]));
+  /* ---- reliability: the health check's day-by-day record ---- */
+  var hist = ((HEALTH.data && HEALTH.data.history) || []).filter(function (d) { return d.date >= parts(from, ET).iso; });
+  if (hist.length) {
+    var green = hist.filter(function (d) { return d.worst === 'ok'; }).length, bad = hist.filter(function (d) { return d.worst === 'down'; });
+    var loops = hist.filter(function (d) { return d.loop != null; }), loopOk = loops.filter(function (d) { return d.loop; }).length;
+    var runs = hist.filter(function (d) { return d.runs != null; });
+    var rows = [
+      ['Days recorded', hist.length],
+      ['All working', green + ' (' + pctOf(green, hist.length) + ')'],
+      ['Something stopped', bad.length + (bad.length ? ': ' + bad.slice(-3).map(function (d) { return fmtDay(at(d.date, 720, ET), ET) + ' (' + (d.issues || []).join(', ') + ')'; }).join('; ') : '')],
+      ['Daily email test passed', loops.length ? loopOk + ' of ' + loops.length : 'Not run yet'],
+      ['Robot runs a day', runs.length ? Math.round(runs.reduce(function (a, d) { return a + d.runs; }, 0) / runs.length) + ' on average, ' + Math.max.apply(null, runs.map(function (d) { return d.runs; })) + ' at most' : '—']
+    ];
+    row(); L.appendChild(figsPanel('Reliability', 'from the health check', rows));
+    var H = HEALTH.data || {}, st = (H.checks || {}).storage || {};
+    R.appendChild(figsPanel('What the Scheduler Keeps', 'right now', [
+      ['Requests in the working file', Object.keys(DB.server.docs || {}).length],
+      ['Archived requests', Object.keys(ARCH.docs).length],
+      ['Emails in the inbox file', inboxItems().length],
+      ['Data storage', st.msg || '—'],
+      ['Claude model', H.claudeModel ? H.claudeModel + (H.modelPinned ? ' (pinned)' : '') : '—']
+    ]));
+  }
 }
 
 function viewHelp(app) {
