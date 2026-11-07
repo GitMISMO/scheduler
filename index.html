@@ -123,6 +123,7 @@ main{max-width:1180px;margin:0 auto;padding:24px 16px 80px}
 .hlist li{display:grid;grid-template-columns:10px minmax(0,1fr);gap:10px;align-items:start}
 .hlist .hdot{margin-top:5px}
 .hlist .ha{color:var(--ink-3,var(--ink-2));font-size:12.5px}
+.move-f .fl{display:block;font-size:13px;font-weight:600;margin:10px 0 0}.move-f select{display:block;width:100%;margin-top:4px}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .notice.bad{border-left-color:var(--bad)}
 .pagehead{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:18px}
@@ -1587,7 +1588,53 @@ function sendPollOk(req) {
   var r = clone(req); r.robotEdit = { pollOk: { by: me().name, at: Date.now() } };
   put(r, 'Checked the request and let the poll go out'); toast('The poll goes out from scheduling@mismo.org within a few minutes.');
 }
-function needsYou(req) { return needsLook(req) || awaitingApproval(req) || followsFinished(req) || awaitingDecision(req) || awaitingPollCheck(req); }
+/* a guest asked to move a booked meeting and MISMO is free: waiting for Vanessa or Jonna (robot/logic.mjs) */
+function awaitingMove(req) { var R = req.robot || {}; return !!(R.auto && req.status === 'booked' && R.proposedMove && R.proposedMove.s); }
+function approveMove(req) {
+  if (!canApprove()) { toast('Only Vanessa or Jonna can approve a move.'); return; }
+  var P = req.robot.proposedMove;
+  if (!confirm('Move “' + (req.title || 'this meeting') + '” to ' + slotLabel(P, VIEW_TZ, true) + '?\n\nEveryone gets Outlook’s cancellation for the old time and a new invitation from scheduling@mismo.org.')) return;
+  var r = clone(req); r.robotEdit = { moveTo: { s: P.s, e: P.e, by: me().name, at: Date.now() }, proposedMove: null };
+  put(r, 'Approved moving it to ' + slotLabel(P, ET, true)); toast('Moving it. The new invitation goes out within a few minutes.');
+}
+function keepTime(req) { var r = clone(req); r.robotEdit = { proposedMove: null }; put(r, 'Kept the current time (the guest’s new time wasn’t used)'); toast('Kept the current time. Reply to the guest if they need to hear why.'); }
+/* move a booked meeting yourself: pick a day and time; the Scheduler shows who from MISMO is free */
+function openMove(req) {
+  if (!canApprove()) { toast('Only Vanessa or Jonna can move a meeting.'); return; }
+  var cur = slotById(req, req.chosen), dur = cur ? cur.e - cur.s : (+req.duration || 30) * 60000;
+  var D = dialog('Move “' + req.title + '”');
+  var days = bizDaysAhead(15, todayISO(ET));
+  var f = el('div', 'move-f');
+  f.innerHTML = '<p class="small muted">Times are Eastern. Everyone gets Outlook’s cancellation for ' + esc(cur ? slotLabel(cur, ET, true) : 'the old time') + ' and a new invitation from scheduling@mismo.org.</p>' +
+    '<label class="fl">Day<select id="mv-d">' + days.map(function (d) { return '<option value="' + d + '">' + esc(fmtDay(at(d, 720, ET), ET)) + '</option>'; }).join('') + '</select></label>' +
+    '<label class="fl">Start<select id="mv-t">' + Array.from({ length: 18 }, function (_, i) { var m = 480 + i * 30; return '<option value="' + m + '"' + (m === 600 ? ' selected' : '') + '>' + esc(fmtTime(at(days[0], m, ET), ET)) + '</option>'; }).join('') + '</select></label>' +
+    '<p id="mv-s" class="small" style="margin-top:10px"></p>';
+  D.body.appendChild(f);
+  var say = $('#mv-s', f);
+  function pick() { var d = $('#mv-d', f).value, m = +$('#mv-t', f).value, s = at(d, m, ET); return { s: s, e: s + dur }; }
+  function check() {
+    var p = pick(), busy = [], unk = [];
+    (req.internal || []).forEach(function (pid) { var st = calState(pid, p.s, p.e), pp = person(pid) || { name: pid }; if (st === null) unk.push(first(pp.name)); else if (st !== 'free') busy.push(first(pp.name) + (st === 'tentative' ? ' (tentative)' : st === 'oof' ? ' (out of office)' : '')); });
+    var clash = allReqs().some(function (o) { if (o.id === req.id || o.status !== 'booked' || (o.where || 'Zoom') !== 'Zoom' || (req.where || 'Zoom') !== 'Zoom') return false; var c = slotById(o, o.chosen); return c && c.s < p.e && c.e > p.s; });
+    say.innerHTML = busy.length ? '<b style="color:var(--bad)">Busy then:</b> ' + esc(busy.join(', ')) + '.' : '<b style="color:var(--good)">Everyone from MISMO is free.</b>' + (unk.length ? ' (Outlook not connected for ' + esc(unk.join(', ')) + '.)' : '');
+    if (clash) say.innerHTML += ' <b style="color:var(--bad)">Another Scheduler Zoom meeting is in the room then.</b>';
+  }
+  $('#mv-d', f).onchange = check; $('#mv-t', f).onchange = check; check();
+  D.foot.appendChild(btn('Cancel', 'ghost', D.close));
+  D.foot.appendChild(btn('Move It', '', function () {
+    var p = pick(); if (p.s < Date.now()) { toast('Pick a time that hasn’t passed.'); return; }
+    var r = clone(getReq(req.id)); r.robotEdit = { moveTo: { s: p.s, e: p.e, by: me().name, at: Date.now() }, proposedMove: null };
+    put(r, 'Moved it to ' + slotLabel(p, ET, true)); D.close(); toast('Moving it. The new invitation goes out within a few minutes.');
+  }, 'check'));
+}
+function cancelMeeting(req) {
+  if (!canApprove()) { toast('Only Vanessa or Jonna can cancel a meeting.'); return; }
+  var note = prompt('Cancel “' + (req.title || 'this meeting') + '”? Everyone gets Outlook’s cancellation from scheduling@mismo.org.\n\nA short note for them (optional):', '');
+  if (note === null) return;
+  var r = clone(req); r.robotEdit = { cancelMeeting: { by: me().name, at: Date.now(), note: String(note || '').slice(0, 300) } };
+  put(r, 'Cancelled the meeting'); toast('Cancelling. Everyone gets Outlook’s cancellation within a few minutes.');
+}
+function needsYou(req) { return needsLook(req) || awaitingApproval(req) || followsFinished(req) || awaitingDecision(req) || awaitingPollCheck(req) || awaitingMove(req); }
 /* Vanessa or Jonna approve a time before anyone outside MISMO is told it's booked */
 var APPROVERS = ['vrios', 'jcritchley'];
 function canApprove() { return PREVIEW || (canEdit() && APPROVERS.indexOf(avKey(me().email)) >= 0); }
@@ -2250,13 +2297,26 @@ function viewDetail(app, req) {
       ba.appendChild(btn('Create the invite in Outlook', '', function () { window.open(owaInvite(req, sl), '_blank', 'noopener'); }, 'cal'));
       ba.appendChild(btn('Download invite file', 'ghost', function () { downloadIcs(req, sl); }, 'down'));
     }
-    if (editable) {
+    if (awaitingMove(req)) {
+      var PM = req.robot.proposedMove;
+      var mvn = el('div', 'notice warn', '<b>' + esc(PM.from || 'A guest') + ' asked to move it to ' + esc(slotLabel(PM, VIEW_TZ, true)) + '.</b> Everyone from MISMO is free then. Nothing has changed for anyone yet.' + (PM.note ? '<br><span class="small muted">“' + esc(PM.note) + '”</span>' : '') + ' ');
+      if (canApprove()) { var mva = el('button', 'linkbtn', 'Approve the Move'); mva.type = 'button'; mva.onclick = function () { approveMove(req); }; mvn.appendChild(mva); mvn.appendChild(document.createTextNode(' · ')); var mvk = el('button', 'linkbtn', 'Keep the Current Time'); mvk.type = 'button'; mvk.onclick = function () { keepTime(req); }; mvn.appendChild(mvk); }
+      $('div', bk).appendChild(mvn);
+    }
+    if (editable && req.robot && req.robot.auto) {
+      /* the Scheduler sent the invitation, so it moves or cancels it in Outlook too */
+      if (canApprove() && sl && sl.e > Date.now()) {
+        ba.appendChild(btn('Move Meeting', 'ghost', function () { openMove(req); }, 'cal'));
+        ba.appendChild(btn('Cancel Meeting', 'ghost', function () { cancelMeeting(req); }));
+      }
+    } else if (editable) {
       ba.appendChild(btn('Draft the confirmation email', 'ghost', function () { openDraft(req, 'confirm'); }, 'spark'));
       ba.appendChild(btn('Pick a different time', 'ghost', function () { var r = clone(req); r.status = ''; r.chosen = null; put(r, 'Reopened to pick a different time'); }));
     }
     bk.appendChild(ba); app.appendChild(bk);
   }
   if (req.status === 'cancelled') app.appendChild(el('div', 'notice warn', (couldntSchedule(req) ? '<b>We couldn’t find a time for this one.</b> Closed' + (req.closedBy ? ' by ' + esc(first(req.closedBy)) : '') + (req.closedAt ? ' ' + esc(fmtDay(req.closedAt, VIEW_TZ)) : '') + '. ' : '<b>This request was cancelled.</b> ') + (canEdit() ? '<button class="linkbtn" type="button" id="reopen">Bring it back</button>' : '')));
+  if (req.status === 'cancelled' && req.robot && req.robot.cancelInvite) { var ci = req.robot.cancelInvite; app.appendChild(el('div', 'notice', ci.state === 'done' ? '<b>Meeting cancelled.</b> Everyone was sent Outlook’s cancellation from scheduling@mismo.org.' : ci.state === 'failed' ? '<b>The Outlook invitation couldn’t be cancelled automatically</b> (' + esc(String(ci.lastErr || '').slice(0, 120)) + '). Please cancel it in the scheduling@mismo.org calendar.' : '<b>Cancelling the Outlook invitation…</b> Everyone gets the cancellation within a few minutes.')); }
   if (req.robot) app.appendChild(robotPanel(req, editable));
   if ($('#reopen')) $('#reopen').onclick = function () { var r = clone(req); r.status = ''; delete r.closed; delete r.closedAt; delete r.closedBy; put(r, 'Brought back'); };
 
@@ -2575,7 +2635,7 @@ function healthStrip() {
   var h = HEALTH.data, now = Date.now(), rows = [];
   if (!HEALTH.loaded || PREVIEW) return null;
   rows.push(robotCheck(h, now));
-  if (h && h.checks) Object.keys(H_LABEL).forEach(function (k) { var c = h.checks[k]; if (c) rows.push({ state: c.state, label: H_LABEL[k], msg: c.msg, at: c.at, since: c.since }); });
+  if (h && h.checks) Object.keys(H_LABEL).forEach(function (k) { var c = h.checks[k]; if (c) rows.push({ state: c.state, label: H_LABEL[k], msg: c.msg + (k === 'claude' && h.claudeModel ? ' Model: ' + h.claudeModel + (h.modelPinned ? ' (pinned).' : ' (newest Sonnet, not pinned).') : ''), at: c.at, since: c.since }); });
   var bad = rows.filter(function (r) { return r.state === 'down'; }), meh = rows.filter(function (r) { return r.state === 'warn'; });
   var overall = bad.length ? 'down' : meh.length ? 'warn' : (h ? 'ok' : 'unk');
   var open = STATE.healthOpen != null ? STATE.healthOpen : overall !== 'ok';
@@ -3288,7 +3348,7 @@ function plural(n, a, b) { return n + ' ' + (n === 1 ? a : b); }
 function shortAgo(t) { var m = Math.round((Date.now() - t) / 60000); if (m < 1) return 'just now'; if (m < 60) return m + ' min ago'; var h = Math.round(m / 60); if (h < 24) return h + (h === 1 ? ' hour ago' : ' hours ago'); return new Date(t).toLocaleDateString('en-US', { timeZone: VIEW_TZ, month: 'short', day: 'numeric' }); }
 function viewDash(app) {
   var now = Date.now(), all = allReqs(), weekAgo = now - 7 * 864e5;
-  var approvals = all.filter(awaitingApproval), looks = all.filter(function (r) { return needsLook(r) || followsFinished(r) || awaitingDecision(r) || awaitingPollCheck(r); }), due = followList(true).filter(function (x) { return x.st === 'due'; });
+  var approvals = all.filter(awaitingApproval), looks = all.filter(function (r) { return needsLook(r) || followsFinished(r) || awaitingDecision(r) || awaitingPollCheck(r) || awaitingMove(r); }), due = followList(true).filter(function (x) { return x.st === 'due'; });
   var open = all.filter(function (r) { var ph = phase(r); return ph !== 'booked' && ph !== 'cancelled'; });
   var polls = open.filter(function (r) { var ph = phase(r); return ph === 'collecting' || ph === 'ready'; });
   var booked = all.filter(function (r) { return r.status === 'booked'; });
@@ -3360,6 +3420,11 @@ function viewDash(app) {
     nd.rows.appendChild(dashRow({ k: '#ff8f7d', nm: r.title || 'Meeting request', small: 'Approve ' + slotLabel(P, VIEW_TZ, true), wh: P.how || '', age: 'Waiting ' + shortAgo(P.at || r.updatedAt || now).replace(' ago', ''), ageCls: 'late', acts: acts, go: function () { go(null, r.id); } }));
   });
   looks.forEach(function (r) {
+    if (awaitingMove(r)) {
+      var ma = canApprove() ? [btn('Approve the Move', 'sm', function () { approveMove(r); }, 'check')] : [];
+      nd.rows.appendChild(dashRow({ k: '#ff8f7d', nm: r.title || 'Meeting request', small: (r.robot.proposedMove.from || 'A guest') + ' asked to move it to ' + slotLabel(r.robot.proposedMove, VIEW_TZ, true), wh: '', age: 'Move?', ageCls: 'late', acts: ma, go: function () { go(null, r.id); } }));
+      return;
+    }
     if (awaitingPollCheck(r)) {
       var pa = canApprove() ? [btn('Send the Poll', 'sm', function () { sendPollOk(r); }, 'check')] : [];
       nd.rows.appendChild(dashRow({ k: '#f0b94a', nm: r.title || 'Meeting request', small: 'From outside MISMO and includes other outside people: check it, then send the poll or close it', wh: '', age: 'Check first', ageCls: 'wait', acts: pa, go: function () { go(null, r.id); } }));
@@ -3554,6 +3619,8 @@ var HELP = [
     '<tr><td><b>Booked and Invited</b></td><td>Vanessa, Jonna copied</td><td>Once the invitation has gone. (If it can’t go by itself, this is <b>Booked, Send the Invite</b> instead, with a button that opens it in Outlook.)</td></tr>' +
     '<tr><td><b>Needs a Look</b></td><td>Vanessa, Jonna copied</td><td>When the Scheduler stops on a request.</td></tr>' +
     '<tr><td><b>Reply About …</b></td><td>Vanessa, Jonna copied</td><td>When someone replies to a Scheduler email. If the reply named times, it says what the Scheduler did with them.</td></tr>' +
+    '<tr><td><b>Approve a New Time: …</b></td><td>Vanessa, Jonna copied</td><td>A guest asked to move a booked meeting and everyone from MISMO is free then. Approve it, or keep the current time.</td></tr>' +
+    '<tr><td><b>Moved and Invited / Cancelled: …</b></td><td>Vanessa, Jonna copied</td><td>After a meeting is moved (old invitation cancelled, new one sent) or cancelled (Outlook’s cancellation sent). If Outlook couldn’t be updated, the subject says Update Outlook.</td></tr>' +
     '<tr><td><b>Check a Request: …</b></td><td>Vanessa, Jonna copied</td><td>When someone outside MISMO asks for a meeting that includes other outside people. Nothing goes out until one of you presses Send the Poll.</td></tr>' +
     '<tr><td><b>Scheduler Health: … Needs a Look</b> / <b>Working Again</b></td><td>Vanessa, Jonna copied</td><td>When a part of the Scheduler stops, and when it’s back. See Health Check.</td></tr>' +
     '<tr><td><b>Scheduler Health Check (date)</b></td><td>scheduling@mismo.org</td><td>Each working day at 8 AM Eastern, to test that email goes out and comes back. No action needed.</td></tr></tbody></table>' +
@@ -3594,6 +3661,7 @@ var HELP = [
     ['Can I forward a request from my own inbox?', 'Yes. Forward it to scheduling@mismo.org and say who should attend. Your Outlook can also do it for you with a rule.'],
     ['Does the Scheduler send the calendar invite?', 'Yes. Once a time is approved, the Outlook invitation goes out from scheduling@mismo.org with the Zoom room link, and the meeting sits on the scheduling@mismo.org calendar. If it can’t, Vanessa gets a button to send it from Outlook.'],
     ['Which Zoom link do meetings use?', 'The MISMO Zoom room: info@mismo.org’s Personal Meeting Room, mba-org.zoom.us/j/2825175426. Guests can join without anyone hosting.'],
+    ['How do I move or cancel a booked meeting?', 'Open the request and press <b>Move Meeting</b> (pick a day and time; it shows who from MISMO is free) or <b>Cancel Meeting</b>. The Scheduler cancels the old Outlook invitation and sends a new one, or sends everyone Outlook’s cancellation. Guests can also reply to their invitation with a time that suits them: if everyone from MISMO is free then, the move waits for Vanessa or Jonna to approve. Meetings booked before November 7 can be moved too, but their old invitation has to be deleted in Outlook by hand.'],
     ['Where do old requests go?', 'A month after the meeting (or a month after a request was closed without one), the Scheduler moves it to a monthly archive so the working file stays small. Archived requests still show in Past Meetings, Couldn’t Schedule, Statistics and search, marked Archived and read-only. Emails in the scheduling inbox are trimmed to the newest message after two weeks and cleared after 120 days; the request keeps its own copy of what was asked.'],
     ['What if a guest emails their times instead of using the link?', 'The Scheduler reads the reply. Times on the poll count as their answer; a new time they suggest is held for approval (or added to the poll when there are other guests) if everyone from MISMO is free. Vanessa gets a Reply About email saying what it did. Vague replies change nothing.'],
     ['What if someone from MISMO is out of office?', 'If they’re out for all the days asked for, the Scheduler doesn’t wait for them. It goes ahead with the others from MISMO and sends them the invitation as optional. The request shows them under Optional from MISMO. It never drops the person who asked, or the only person from MISMO on the meeting. If they’re out for only part of the time, it simply offers the days they’re back.'],
