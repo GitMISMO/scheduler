@@ -11,7 +11,10 @@ repository `GitMISMO/scheduler-data` and are read and saved through the save rel
 
 | File | What it is |
 |---|---|
-| `index.html` | The staff tool: Follow Up, Requests, New Request, How It Works. Gated with `requireAccess('scheduler')`. |
+| `index.html` | The staff tool's shell: sign-in gate (`requireAccess('scheduler')`), page layout, and the three files below. |
+| `scheduler.js` | The staff tool itself: Dashboard, requests, Statistics, Help, saving through the relay. |
+| `scheduler.css` | Its styles (light and dark). |
+| `rail.js` | The left rail, search and theme button. |
 | `respond.html` | The page an outside guest opens from their email to mark which times work. No sign-in. |
 
 Opened anywhere other than resources.mismo.org, or with `?preview=1`, both pages run as a **preview** with
@@ -48,3 +51,5 @@ Before uploading a new copy of a page, download the current one from GitHub firs
 that copy. Uploading an older copy silently undoes everything that changed since.
 
 Storage keys are `tools:scheduler:<name>`. The page never calls `localStorage.clear()`.
+
+When `scheduler.js`, `scheduler.css` or `rail.js` change, bump the `?v=` stamp on their tags in `index.html` and upload it too, so browsers pick up the new copy. The full developer handbook is `robot/README.md` in `GitMISMO/scheduler-data`.
