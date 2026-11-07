@@ -111,6 +111,19 @@ main{max-width:1180px;margin:0 auto;padding:24px 16px 80px}
 .notice{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--sky);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13.5px;color:var(--ink-2)}
 .notice b{color:var(--ink)}
 .notice.warn{border-left-color:var(--warn)}
+.hstrip{background:var(--surface);border:1px solid var(--border);border-radius:10px;margin:0 0 16px;font-size:13.5px;color:var(--ink-2)}
+.hstrip>button{all:unset;box-sizing:border-box;display:flex;gap:10px;align-items:center;width:100%;padding:10px 14px;cursor:pointer;border-radius:10px}
+.hstrip>button:focus-visible{outline:2px solid var(--sky);outline-offset:2px}
+.hstrip b{color:var(--ink)}
+.hstrip .hs-more{margin-left:auto;color:var(--ink-3,var(--ink-2));font-size:12.5px;white-space:nowrap}
+.hdot{width:10px;height:10px;border-radius:50%;flex:none;background:var(--good)}
+.hdot.warn{background:var(--warn)}.hdot.down{background:var(--bad)}.hdot.unk{background:var(--border)}
+.hstrip.down{border-color:var(--bad);background:var(--bad-soft)}.hstrip.warn{border-color:var(--warn);background:var(--warn-soft)}
+.hlist{list-style:none;margin:0;padding:4px 14px 12px;display:grid;gap:8px}
+.hlist li{display:grid;grid-template-columns:10px minmax(0,1fr);gap:10px;align-items:start}
+.hlist .hdot{margin-top:5px}
+.hlist .ha{color:var(--ink-3,var(--ink-2));font-size:12.5px}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .notice.bad{border-left-color:var(--bad)}
 .pagehead{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:18px}
 .pagehead h1{font-size:24px}
@@ -1095,8 +1108,26 @@ function noteSeen(r) {
 }
 function seenFrom(r) { return r && r.id && r.updatedAt != null && SEEN[r.id] && SEEN[r.id][r.updatedAt] ? clone(SEEN[r.id][r.updatedAt]) : undefined; }
 
+/* finished requests a month past their meeting live in monthly archive files (the robot
+   moves them; see robot/archive.mjs). They're read here for Past Meetings, Couldn't Schedule,
+   Statistics and search, and are shown read-only. */
+var ARCH = { docs: {}, loaded: false, at: 0 };
+function loadArchive() {
+  if (PREVIEW) { ARCH.loaded = true; return Promise.resolve(false); }
+  return readData(PROJECT, 'archive-index').then(function (b) {
+    var months = Object.keys((b && b.data && b.data.months) || {}).sort().reverse().slice(0, 36);
+    return Promise.all(months.map(function (m) { return readData(PROJECT, 'archive-' + m).then(function (x) { return (x && x.data && x.data.docs) || {}; }, function () { return {}; }); }));
+  }).then(function (list) {
+    var next = {}; list.forEach(function (d) { Object.keys(d).forEach(function (id) { next[id] = d[id]; }); });
+    var changed = Object.keys(next).length !== Object.keys(ARCH.docs).length;
+    ARCH.docs = next; ARCH.loaded = true; ARCH.at = Date.now();
+    return changed;
+  }, function () { ARCH.loaded = true; return false; });
+}
+function isArchived(r) { return !!(r && r.archivedAt); }
+
 function docs() {
-  var all = Object.assign({}, DB.server.docs || {});
+  var all = Object.assign({}, ARCH.docs, DB.server.docs || {});
   Object.keys(DB.pending).forEach(function (id) {
     if (DB.pending[id] === null) { delete all[id]; return; }
     var r = DB.pending[id];
@@ -1122,6 +1153,7 @@ function loadReqs() {
   }, function (e) { noAccess(e); throw e; });
 }
 function put(req, why) {
+  if (isArchived(req) && !(DB.server.docs || {})[req.id]) { toast('This request is archived, so it can’t be changed. Start a new request instead.'); return Promise.reject(err('ARCHIVED')); }
   if (!canEdit()) { toast('You can look at the Scheduler but not change it. Ask Perry for Edit access.'); return Promise.reject(err('VIEW_ONLY')); }
   /* November 5, 2026: the copy this change was made to, before it is stamped */
   var from = seenFrom(req), had = DB.pending[req.id];
@@ -1288,7 +1320,7 @@ function flush() {
 /* other people's changes: the relay has no push, so look again while the page is in use */
 setInterval(function () {
   if (PREVIEW || document.hidden || DB.flushing || Object.keys(DB.pending).length || !DB.loaded) return;
-  Promise.all([loadReqs(), typeof loadInbox === 'function' ? loadInbox() : false]).then(function (ch) { if (ch[0] || ch[1]) render(); }, function () {});
+  Promise.all([loadReqs(), typeof loadInbox === 'function' ? loadInbox() : false, typeof loadHealth === 'function' ? loadHealth() : false, Date.now() - ARCH.at > 30 * 60000 ? loadArchive() : false]).then(function (ch) { if (ch[0] || ch[1] || ch[2] || ch[3]) render(); }, function () {});
 }, 45000);
 window.addEventListener('beforeunload', function (e) { if (Object.keys(DB.pending).length && !PREVIEW) { e.preventDefault(); e.returnValue = ''; } });
 
@@ -2180,7 +2212,7 @@ function guessFromEmail(txt) {
 
 /* ---------------- one request ---------------- */
 function viewDetail(app, req) {
-  var editable = canEdit() && req.status !== 'cancelled';
+  var editable = canEdit() && req.status !== 'cancelled' && !isArchived(req);
   var head = el('div', 'pagehead');
   var meta = [esc(req.duration || 30) + ' min', esc(req.where || ''), 'Organizer: ' + esc(req.ownerName || req.owner)];
   if (req.askedBy) meta.push('Asked for by ' + esc(req.askedBy));
@@ -2193,6 +2225,7 @@ function viewDetail(app, req) {
   }
   head.appendChild(acts);
   app.appendChild(head);
+  if (isArchived(req)) app.appendChild(el('div', 'notice', '<b>Archived ' + esc(fmtDay(req.archivedAt, VIEW_TZ)) + '.</b> Finished requests move to the archive a month after the meeting (or after they were closed). It’s kept for reference and can’t be changed; guest links no longer work.'));
 
   if (req.status === 'booked') {
     var sl = slotById(req, req.chosen);
@@ -2508,6 +2541,52 @@ function loadInbox() {
     return before !== JSON.stringify(INBOX.server.docs);
   }, function () { INBOX.loaded = true; return false; });
 }
+/* ---------------- the health check (written by the robot: data/health.json) ---------------- */
+var HEALTH = { data: null, loaded: false };
+function loadHealth() {
+  if (PREVIEW) { HEALTH.loaded = true; return Promise.resolve(false); }
+  return readData(PROJECT, 'health').then(function (b) {
+    var before = JSON.stringify(HEALTH.data);
+    HEALTH.data = b && b.data && typeof b.data === 'object' ? b.data : null; HEALTH.loaded = true;
+    return before !== JSON.stringify(HEALTH.data);
+  }, function () { HEALTH.loaded = true; return false; });
+}
+var H_LABEL = { emailLoop: 'Email In and Out', availability: 'Outlook Availability', sending: 'Sending Emails', invites: 'Calendar Invitations', claude: 'Reading Emails (Claude)', storage: 'Data Storage', runs: 'Robot Runs Today' };
+/* the robot can't say it has stopped, so the page works it out: on working days it runs at least every two hours */
+function robotCheck(h, now) {
+  var p = parts(now, ET), wd = !isWeekend(p.iso), last = h && h.lastRunAt;
+  if (!last) return { state: 'unk', label: 'Scheduler Robot', msg: 'No run recorded yet.' };
+  if (wd && p.h >= 9 && p.h < 18 && now - last > 2.5 * 36e5) return { state: 'down', label: 'Scheduler Robot', msg: 'Hasn’t run since ' + whenAgo(last) + '. GitHub Actions may be paused or out of minutes; nothing is being decided or sent.', at: last };
+  return { state: 'ok', label: 'Scheduler Robot', msg: 'Running normally.', at: last };
+}
+function healthStrip() {
+  var h = HEALTH.data, now = Date.now(), rows = [];
+  if (!HEALTH.loaded || PREVIEW) return null;
+  rows.push(robotCheck(h, now));
+  if (h && h.checks) Object.keys(H_LABEL).forEach(function (k) { var c = h.checks[k]; if (c) rows.push({ state: c.state, label: H_LABEL[k], msg: c.msg, at: c.at, since: c.since }); });
+  var bad = rows.filter(function (r) { return r.state === 'down'; }), meh = rows.filter(function (r) { return r.state === 'warn'; });
+  var overall = bad.length ? 'down' : meh.length ? 'warn' : (h ? 'ok' : 'unk');
+  var open = STATE.healthOpen != null ? STATE.healthOpen : overall !== 'ok';
+  var box = el('div', 'hstrip' + (overall === 'down' || overall === 'warn' ? ' ' + overall : ''));
+  var head = el('button'); head.type = 'button'; head.setAttribute('aria-expanded', String(open));
+  var say = overall === 'down' ? '<b>' + esc(bad.map(function (r) { return r.label; }).join(', ')) + (bad.length === 1 ? ' needs' : ' need') + ' a look.</b> Vanessa and Jonna have been emailed.'
+    : overall === 'warn' ? '<b>Mostly fine.</b> Keep an eye on ' + esc(meh.map(function (r) { return r.label; }).join(', ')) + '.'
+    : overall === 'unk' ? '<b>Health check starting.</b> The robot reports in on its next run.'
+    : '<b>Everything is working.</b> Emails come in and go out, Outlook is current, and the robot ran ' + esc(whenAgo(h.lastRunAt)) + '.';
+  head.innerHTML = '<span class="hdot ' + (overall === 'ok' ? '' : overall) + '" aria-hidden="true"></span><span>' + say + '</span><span class="hs-more">' + (open ? 'Hide details' : 'Details') + '</span>';
+  head.onclick = function () { STATE.healthOpen = !open; render(); };
+  box.appendChild(head);
+  if (open) {
+    var ul = el('ul', 'hlist');
+    rows.forEach(function (r) {
+      ul.appendChild(el('li', null, '<span class="hdot ' + (r.state === 'ok' ? '' : r.state) + '" aria-hidden="true"></span><div><b>' + esc(r.label) + '</b> <span class="sr-only">(' + esc(r.state === 'ok' ? 'working' : r.state === 'warn' ? 'warning' : r.state === 'down' ? 'not working' : 'unknown') + ')</span>· ' + esc(r.msg || '') +
+        (r.at ? ' <span class="ha">' + esc(whenAgo(r.at)) + '</span>' : '') + (r.state === 'down' && r.since ? ' <span class="ha">· first noticed ' + esc(whenAgo(r.since)) + '</span>' : '') + '</div>'));
+    });
+    box.appendChild(ul);
+  }
+  return box;
+}
+
 /* small changes (status, link to a request), read-modify-write so a newly arrived email is never lost */
 var inChain = Promise.resolve();
 function updInbox(id, patch) {
@@ -3233,6 +3312,7 @@ function viewDash(app) {
   ring.title = 'Of the requests started in the last 30 days, ' + pct + '% are booked';
   if (!RED()) setTimeout(function () { var a = $('.arc', ring); if (a) a.setAttribute('stroke-dashoffset', off(pct)); }, 80);
   app.appendChild(hero);
+  var hsx = healthStrip(); if (hsx) app.appendChild(hsx);
 
   /* ---- the four boxes ---- */
   var tiles = el('div', 'dash-tiles');
@@ -3456,7 +3536,9 @@ var HELP = [
     '<tr><td><b>Calendar Invitation</b></td><td>Everyone in the meeting</td><td>Once a time is approved: an Outlook invitation from scheduling@mismo.org with the MISMO Zoom room link (info@mismo.org’s room). Guests can join any time. The Scheduler never books two Zoom meetings at once, or over info@mismo.org’s own meetings, since the room holds one meeting at a time.</td></tr>' +
     '<tr><td><b>Booked and Invited</b></td><td>Vanessa, Jonna copied</td><td>Once the invitation has gone. (If it can’t go by itself, this is <b>Booked, Send the Invite</b> instead, with a button that opens it in Outlook.)</td></tr>' +
     '<tr><td><b>Needs a Look</b></td><td>Vanessa, Jonna copied</td><td>When the Scheduler stops on a request.</td></tr>' +
-    '<tr><td><b>Reply About …</b></td><td>Vanessa, Jonna copied</td><td>When someone replies to a Scheduler email. If the reply named times, it says what the Scheduler did with them.</td></tr></tbody></table>' +
+    '<tr><td><b>Reply About …</b></td><td>Vanessa, Jonna copied</td><td>When someone replies to a Scheduler email. If the reply named times, it says what the Scheduler did with them.</td></tr>' +
+    '<tr><td><b>Scheduler Health: … Needs a Look</b> / <b>Working Again</b></td><td>Vanessa, Jonna copied</td><td>When a part of the Scheduler stops, and when it’s back. See Health Check.</td></tr>' +
+    '<tr><td><b>Scheduler Health Check (date)</b></td><td>scheduling@mismo.org</td><td>Each working day at 8 AM Eastern, to test that email goes out and comes back. No action needed.</td></tr></tbody></table>' +
     '<p class="lead">Every email the Scheduler sent for a request is listed on that request, with whether it went out.</p>'; } },
   { id: 'look', k: '#f0b94a', t: 'When It Stops', h: function () { return '<h2>Needs a Look</h2><p class="lead">The Scheduler stops and emails Vanessa, with Jonna copied, rather than guess. The request shows the reason at the top. If no time can be found, press <b>Close as Couldn’t Schedule</b>: it moves to the Couldn’t Schedule list on the Dashboard for reference.</p>' +
     '<table><thead><tr><th>Why it stopped</th><th>What to do</th></tr></thead><tbody>' +
@@ -3467,6 +3549,17 @@ var HELP = [
     '<tr><td>No time in the next three weeks when everyone from MISMO is free</td><td>Free up a calendar or offer times by hand.</td></tr>' +
     '<tr><td>Outlook information missing for a working day</td><td>Tell Jonna: the Team Availability flow in Power Automate may have stopped.</td></tr>' +
     '<tr><td>An email failed five times</td><td>Tell Jonna: the Send Emails flow in Power Automate may need attention.</td></tr></tbody></table>'; } },
+  { id: 'health', k: '#0f7b5c', t: 'Health Check', h: function () { return '<h2>Health Check</h2><p class="lead">The strip under the greeting on the Dashboard says whether every part of the Scheduler is working. Green means it is. If something stops, Vanessa gets an email (Jonna copied) once when it happens, once a day while it lasts, and once when it’s working again.</p>' +
+    '<table><thead><tr><th>Check</th><th>How it knows</th><th>If it’s red</th></tr></thead><tbody>' +
+    '<tr><td><b>Scheduler Robot</b></td><td>The robot runs at least every two hours on working days. The page notices when it hasn’t.</td><td>Open GitHub, scheduler-data, Actions. Check the workflow isn’t turned off and the account hasn’t run out of Actions minutes.</td></tr>' +
+    '<tr><td><b>Email In and Out</b></td><td>At 8 AM Eastern each working day the robot sends a short test email to scheduling@mismo.org. It goes out through the Send Emails flow and comes back through the Email Watcher flow, so one test proves both. It should be back within two hours.</td><td>In Power Automate, check the run history of Scheduler - Send Emails and Scheduler - Email Watcher. A flow that was turned off or lost its sign-in shows there.</td></tr>' +
+    '<tr><td><b>Outlook Availability</b></td><td>The Team Availability flow refreshes everyone’s Outlook every half hour.</td><td>Check Scheduler - Team Availability in Power Automate. Until it’s fresh, no new times are offered.</td></tr>' +
+    '<tr><td><b>Sending Emails</b></td><td>Emails the Send Emails flow refused in the last day.</td><td>Check the flow’s run history. Each failed email is retried, and after five tries Vanessa is told which one.</td></tr>' +
+    '<tr><td><b>Calendar Invitations</b></td><td>Invitations that failed this week.</td><td>Open the request and send the invite from Outlook with the buttons there.</td></tr>' +
+    '<tr><td><b>Reading Emails (Claude)</b></td><td>Whether Claude answered the last time it was asked.</td><td>Usually a short outage. New requests go to a person meanwhile; check the ANTHROPIC_API_KEY secret if it lasts.</td></tr>' +
+    '<tr><td><b>Data Storage</b></td><td>How full the data files are. Closed requests are archived automatically.</td><td>Tell Jonna.</td></tr>' +
+    '<tr><td><b>Robot Runs Today</b></td><td>How many times the robot ran today. A normal day is 15–20.</td><td>Something is saving over and over, usually a Scheduler tab left open. Close Scheduler tabs and reopen one.</td></tr>' +
+    '</tbody></table><p>The daily test email lands in the scheduling@ mailbox with the subject “Scheduler Health Check” and the date. You can delete it or leave it; it never becomes a request.</p>'; } },
   { id: 'behind', k: '#14486e', t: 'Behind the Scenes', h: function () { return '<h2>How It’s Put Together</h2><p class="lead">For Jonna, and for anyone looking after the Scheduler later.</p>' +
     '<table><thead><tr><th>Piece</th><th>What it does</th><th>Where it lives</th></tr></thead><tbody>' +
     '<tr><td><b>Send Invite</b></td><td>Puts the approved meeting on the scheduling@mismo.org calendar and sends everyone the Outlook invitation with the Zoom room link.</td><td>Power Automate, “Scheduler - Send Invite” (Jonna’s license). Its link is the FLOW_INVITE_URL secret on GitHub.</td></tr>' +
@@ -3483,6 +3576,7 @@ var HELP = [
     ['Can I forward a request from my own inbox?', 'Yes. Forward it to scheduling@mismo.org and say who should attend. Your Outlook can also do it for you with a rule.'],
     ['Does the Scheduler send the calendar invite?', 'Yes. Once a time is approved, the Outlook invitation goes out from scheduling@mismo.org with the Zoom room link, and the meeting sits on the scheduling@mismo.org calendar. If it can’t, Vanessa gets a button to send it from Outlook.'],
     ['Which Zoom link do meetings use?', 'The MISMO Zoom room: info@mismo.org’s Personal Meeting Room, mba-org.zoom.us/j/2825175426. Guests can join without anyone hosting.'],
+    ['Where do old requests go?', 'A month after the meeting (or a month after a request was closed without one), the Scheduler moves it to a monthly archive so the working file stays small. Archived requests still show in Past Meetings, Couldn’t Schedule, Statistics and search, marked Archived and read-only. Emails in the scheduling inbox are trimmed to the newest message after two weeks and cleared after 120 days; the request keeps its own copy of what was asked.'],
     ['What if a guest emails their times instead of using the link?', 'The Scheduler reads the reply. Times on the poll count as their answer; a new time they suggest is held for approval (or added to the poll when there are other guests) if everyone from MISMO is free. Vanessa gets a Reply About email saying what it did. Vague replies change nothing.'],
     ['What if someone from MISMO is out of office?', 'If they’re out for all the days asked for, the Scheduler doesn’t wait for them. It goes ahead with the others from MISMO and sends them the invitation as optional. The request shows them under Optional from MISMO. It never drops the person who asked, or the only person from MISMO on the meeting. If they’re out for only part of the time, it simply offers the days they’re back.'],
     ['Can a meeting be an hour?', 'Yes. If the email asks for an hour, the Scheduler offers hour-long times. To change a request already under way, press Edit details and change the length; fresh times at the new length go out.'],
@@ -3833,7 +3927,8 @@ if (PREVIEW) {
     if (!rs) { $('#app').innerHTML = '<div class="notice bad">The sign-in couldn’t load. Reload the page.</div>'; return; }
     rs.requireAccess(PROJECT, { toolName: TOOL }).then(function () {
       render();
-      return Promise.all([loadReqs(), loadTeam(), loadInbox()]).then(function () {
+      loadArchive().then(function (ch) { if (ch) render(); });
+      return Promise.all([loadReqs(), loadTeam(), loadInbox(), loadHealth()]).then(function () {
         start();
         /* bring Team HQ's reminders up to date (an outside guest may have answered by link) */
         syncHqTasks(allReqs().filter(function (r) { return (r.guests || []).some(function (g) { return g.sentAt; }); }).map(function (r) { return r.id; }));
