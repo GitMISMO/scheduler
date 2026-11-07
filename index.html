@@ -1580,7 +1580,14 @@ function toggleOptional(req, g) {
   toast(on ? first(g.name || g.email) + ' is optional: times only have to work for the others, and the invite lists them as optional.' : first(g.name || g.email) + ' is required again.');
 }
 function optionalStaff(r) { return ((r && r.internalOptional) || []).filter(function (id) { return (r.internal || []).indexOf(id) < 0; }).map(function (id) { var p = person(id); return p ? p.name : id; }); }
-function needsYou(req) { return needsLook(req) || awaitingApproval(req) || followsFinished(req) || awaitingDecision(req); }
+/* someone outside MISMO listed other outside people: held until Vanessa or Jonna check it (robot/logic.mjs) */
+function awaitingPollCheck(req) { var R = req.robot || {}; return isAuto(req) && (!R.stage || R.stage === 'new') && !!R.pollHeld && !R.pollOk && req.status !== 'booked' && req.status !== 'cancelled'; }
+function sendPollOk(req) {
+  if (!canApprove()) { toast('Only Vanessa or Jonna can send it.'); return; }
+  var r = clone(req); r.robotEdit = { pollOk: { by: me().name, at: Date.now() } };
+  put(r, 'Checked the request and let the poll go out'); toast('The poll goes out from scheduling@mismo.org within a few minutes.');
+}
+function needsYou(req) { return needsLook(req) || awaitingApproval(req) || followsFinished(req) || awaitingDecision(req) || awaitingPollCheck(req); }
 /* Vanessa or Jonna approve a time before anyone outside MISMO is told it's booked */
 var APPROVERS = ['vrios', 'jcritchley'];
 function canApprove() { return PREVIEW || (canEdit() && APPROVERS.indexOf(avKey(me().email)) >= 0); }
@@ -2357,6 +2364,11 @@ function robotPanel(req, editable) {
     apb.appendChild(apa); b.appendChild(apb);
   }
   if (R.approved && R.stage === 'approve') b.appendChild(el('div', 'notice', '<b>Approved by ' + esc(R.approved.by || 'staff') + '.</b> The calendar invitation goes out within a few minutes.'));
+  if (awaitingPollCheck(req)) {
+    var pc = el('div', 'notice warn', '<b>Check this one first.</b> It came from outside MISMO and includes other people outside MISMO, so nobody has been emailed yet. If it looks genuine, send the poll. If not, close it and nobody is emailed. ');
+    if (canApprove()) { var pcb = el('button', 'linkbtn', 'Send the Poll'); pcb.type = 'button'; pcb.onclick = function () { sendPollOk(req); }; pc.appendChild(pcb); pc.appendChild(document.createTextNode(' · ')); var pcc = el('button', 'linkbtn', 'Close It'); pcc.type = 'button'; pcc.onclick = function () { closeUnscheduled(req); }; pc.appendChild(pcc); }
+    b.appendChild(pc);
+  }
   if (awaitingDecision(req)) {
     var dc = el('div', 'notice warn', '<b>No time on the poll works for everyone, so the Scheduler is waiting for you.</b> Press <b>Book</b> under the best time in the grid below, mark someone <b>optional</b> under Outside guests so the time only has to work for the others, or send a fresh set of times. ');
     if (editable) { var dcb = el('button', 'linkbtn', 'Send New Times'); dcb.type = 'button'; dcb.onclick = function () { sendNewTimes(req); }; dc.appendChild(dcb); }
@@ -3276,7 +3288,7 @@ function plural(n, a, b) { return n + ' ' + (n === 1 ? a : b); }
 function shortAgo(t) { var m = Math.round((Date.now() - t) / 60000); if (m < 1) return 'just now'; if (m < 60) return m + ' min ago'; var h = Math.round(m / 60); if (h < 24) return h + (h === 1 ? ' hour ago' : ' hours ago'); return new Date(t).toLocaleDateString('en-US', { timeZone: VIEW_TZ, month: 'short', day: 'numeric' }); }
 function viewDash(app) {
   var now = Date.now(), all = allReqs(), weekAgo = now - 7 * 864e5;
-  var approvals = all.filter(awaitingApproval), looks = all.filter(function (r) { return needsLook(r) || followsFinished(r) || awaitingDecision(r); }), due = followList(true).filter(function (x) { return x.st === 'due'; });
+  var approvals = all.filter(awaitingApproval), looks = all.filter(function (r) { return needsLook(r) || followsFinished(r) || awaitingDecision(r) || awaitingPollCheck(r); }), due = followList(true).filter(function (x) { return x.st === 'due'; });
   var open = all.filter(function (r) { var ph = phase(r); return ph !== 'booked' && ph !== 'cancelled'; });
   var polls = open.filter(function (r) { var ph = phase(r); return ph === 'collecting' || ph === 'ready'; });
   var booked = all.filter(function (r) { return r.status === 'booked'; });
@@ -3348,6 +3360,11 @@ function viewDash(app) {
     nd.rows.appendChild(dashRow({ k: '#ff8f7d', nm: r.title || 'Meeting request', small: 'Approve ' + slotLabel(P, VIEW_TZ, true), wh: P.how || '', age: 'Waiting ' + shortAgo(P.at || r.updatedAt || now).replace(' ago', ''), ageCls: 'late', acts: acts, go: function () { go(null, r.id); } }));
   });
   looks.forEach(function (r) {
+    if (awaitingPollCheck(r)) {
+      var pa = canApprove() ? [btn('Send the Poll', 'sm', function () { sendPollOk(r); }, 'check')] : [];
+      nd.rows.appendChild(dashRow({ k: '#f0b94a', nm: r.title || 'Meeting request', small: 'From outside MISMO and includes other outside people: check it, then send the poll or close it', wh: '', age: 'Check first', ageCls: 'wait', acts: pa, go: function () { go(null, r.id); } }));
+      return;
+    }
     if (awaitingDecision(r)) {
       var da = canEdit() ? [btn('Send New Times', 'sm ghost', function () { sendNewTimes(r); })] : [];
       nd.rows.appendChild(dashRow({ k: '#f0b94a', nm: r.title || 'Meeting request', small: 'No time works for everyone: book the best one, make someone optional, or send new times', wh: '', age: 'Your call', ageCls: 'wait', acts: da, go: function () { go(null, r.id); } }));
@@ -3483,7 +3500,7 @@ var HELP = [
     '<tr><td><b>Needs a Look</b></td><td>The Scheduler stopped and told Vanessa why.</td><td>Fix what’s needed, then Hand Back to the Scheduler, or carry on by hand.</td></tr>' +
     '<tr><td><b>Couldn’t Schedule</b></td><td>Closed after we tried and no time could be found. Kept on the Dashboard for reference.</td><td>Bring it back from the request to try again.</td></tr>' +
     '<tr><td><b>Cancelled</b></td><td>Stopped for good.</td><td>Bring it back from the request if needed.</td></tr></tbody></table>' +
-    '<h3>Rules It Follows</h3><ul><li>Times are offered 9:00 AM to 5:00 PM Eastern, on working days only. Fridays between Memorial Day and Labor Day end at 1:00 PM.</li><li>MISMO holidays are never offered: MLK Day, Presidents’ Day, Memorial Day, Juneteenth, Independence Day, Labor Day, Veterans Day, Thanksgiving and the day after, and Winter Break.</li><li>A poll offers up to six times spread over the coming working days, one a day first and never more than two a day, starting the next working day.</li><li>If the email limits the dates (for example “the week of the 16th”), every time on the poll is inside them. Times someone suggests for themselves (“Thursday 1–3 works”) are tried first, and if they don’t work the poll offers other times.</li><li>Tentative in Outlook counts as busy when offering new times.</li><li>If Outlook information is missing or more than six hours old, nothing is decided until it is fresh. If it stays missing for a working day, Vanessa is told.</li><li>Once people have answered, the Scheduler never sends a second set of times on its own: Vanessa or Jonna decide. (If nobody has answered and the times simply run out, it refreshes them.)</li><li>A guest marked optional doesn’t have to be free for a time to work, and is invited as optional.</li><li>If someone from MISMO is out of office for all the days asked for (or the coming week, when no days are named), the Scheduler doesn’t wait for them: it goes ahead with the others and invites them as optional. It never does this for the person who asked, or when they’re the only one from MISMO on the meeting.</li><li>Meetings can be any length. The length comes from the email (for example “an hour”) or from Edit details; changing it while a poll is out swaps in fresh times at the new length.</li><li>Zoom meetings use the one MISMO Zoom room, so two Scheduler Zoom meetings never overlap, and they keep clear of the workgroup meetings on the Meeting Trackers schedule and of info@mismo.org’s calendar.</li></ul>'; } },
+    '<h3>Rules It Follows</h3><ul><li>Times are offered 9:00 AM to 5:00 PM Eastern, on working days only. Fridays between Memorial Day and Labor Day end at 1:00 PM.</li><li>MISMO holidays are never offered: MLK Day, Presidents’ Day, Memorial Day, Juneteenth, Independence Day, Labor Day, Veterans Day, Thanksgiving and the day after, and Winter Break.</li><li>A poll offers up to six times spread over the coming working days, one a day first and never more than two a day, starting the next working day.</li><li>If the email limits the dates (for example “the week of the 16th”), every time on the poll is inside them. Times someone suggests for themselves (“Thursday 1–3 works”) are tried first, and if they don’t work the poll offers other times.</li><li>Tentative in Outlook counts as busy when offering new times.</li><li>If Outlook information is missing or more than six hours old, nothing is decided until it is fresh. If it stays missing for a working day, Vanessa is told.</li><li>Once people have answered, the Scheduler never sends a second set of times on its own: Vanessa or Jonna decide. (If nobody has answered and the times simply run out, it refreshes them.)</li><li>If someone outside MISMO asks for a meeting that includes other outside people (anyone not at their own organization, or anyone at all when they write from a personal address like Gmail), nobody is emailed until Vanessa or Jonna check it and press <b>Send the Poll</b>. This stops anyone using the scheduling mailbox to email strangers. Requests from MISMO staff are never held.</li><li>A guest marked optional doesn’t have to be free for a time to work, and is invited as optional.</li><li>If someone from MISMO is out of office for all the days asked for (or the coming week, when no days are named), the Scheduler doesn’t wait for them: it goes ahead with the others and invites them as optional. It never does this for the person who asked, or when they’re the only one from MISMO on the meeting.</li><li>Meetings can be any length. The length comes from the email (for example “an hour”) or from Edit details; changing it while a poll is out swaps in fresh times at the new length.</li><li>Zoom meetings use the one MISMO Zoom room, so two Scheduler Zoom meetings never overlap, and they keep clear of the workgroup meetings on the Meeting Trackers schedule and of info@mismo.org’s calendar.</li></ul>'; } },
   { id: 'approve', k: '#ff8f7d', t: 'Approving a Time', h: function () { return '<h2>Approving a Time</h2><p class="lead">When the Scheduler finds a time that works for everyone, Vanessa gets an <b>Approve a Time</b> email with Jonna copied, and the request appears at the top of <b>Needs You</b> on the Dashboard.</p>' +
     HELP_STEPS([['Open the Dashboard', 'The time waiting for approval is the first row under Needs You, with why it was picked.'], ['Approve', 'Press Approve on the row, or open the request and press Approve This Time. Only Vanessa and Jonna see the button.'], ['Or Pick Another Time', 'Open the request and press Book under any time in the grid. That approves that time instead, and works even while the poll is still out.'], ['It Sends Everything', 'Within a few minutes everyone gets an Outlook invitation from scheduling@mismo.org with the Zoom room link; that is their confirmation. Optional guests are invited as optional. Vanessa gets Booked and Invited, with Jonna copied.']]) +
     '<div class="hnote"><b>If Outlook changes before you approve</b> (someone books that time), the Scheduler lets the held time go and finds another. Nothing has gone to the guests, so there is nothing to take back.</div>'; } },
@@ -3537,6 +3554,7 @@ var HELP = [
     '<tr><td><b>Booked and Invited</b></td><td>Vanessa, Jonna copied</td><td>Once the invitation has gone. (If it can’t go by itself, this is <b>Booked, Send the Invite</b> instead, with a button that opens it in Outlook.)</td></tr>' +
     '<tr><td><b>Needs a Look</b></td><td>Vanessa, Jonna copied</td><td>When the Scheduler stops on a request.</td></tr>' +
     '<tr><td><b>Reply About …</b></td><td>Vanessa, Jonna copied</td><td>When someone replies to a Scheduler email. If the reply named times, it says what the Scheduler did with them.</td></tr>' +
+    '<tr><td><b>Check a Request: …</b></td><td>Vanessa, Jonna copied</td><td>When someone outside MISMO asks for a meeting that includes other outside people. Nothing goes out until one of you presses Send the Poll.</td></tr>' +
     '<tr><td><b>Scheduler Health: … Needs a Look</b> / <b>Working Again</b></td><td>Vanessa, Jonna copied</td><td>When a part of the Scheduler stops, and when it’s back. See Health Check.</td></tr>' +
     '<tr><td><b>Scheduler Health Check (date)</b></td><td>scheduling@mismo.org</td><td>Each working day at 8 AM Eastern, to test that email goes out and comes back. No action needed.</td></tr></tbody></table>' +
     '<p class="lead">Every email the Scheduler sent for a request is listed on that request, with whether it went out.</p>'; } },
