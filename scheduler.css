@@ -678,3 +678,6 @@ body.railmini .rail nav button .n{display:none}
 @media (max-width:900px){.stgrid{grid-template-columns:1fr}}
 .sttip{position:fixed;z-index:300;pointer-events:none;background:var(--navy-deep);color:#fff;font-size:12px;line-height:1.35;padding:6px 9px;border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:240px}
 
+
+/* an email opened from the Dashboard */
+.fu.in-focus{box-shadow:0 0 0 2px var(--sky);scroll-margin-top:80px}

@@ -1978,9 +1978,29 @@ function viewInbox(app) {
   var box = el('div', 'fu-list');
   list.forEach(function (x) { box.appendChild(inboxCard(x)); });
   app.appendChild(box);
+  /* opened from the Dashboard: go straight to that email, opened up */
+  if (STATE.inFocus) {
+    var fid = STATE.inFocus; STATE.inFocus = null;
+    var card = $('[data-in="' + fid + '"]', box);
+    if (card) {
+      card.classList.add('in-focus');
+      var mb = $('.in-more', card); if (mb && $('pre', card).hidden) mb.click();
+      setTimeout(function () { card.scrollIntoView({ behavior: RED() ? 'auto' : 'smooth', block: 'start' }); }, 30);
+    }
+  }
+}
+/* the Scheduler's own daily test email (robot/health.mjs): kept out of the Dashboard and counts */
+function isHealthMail(x) { return /^\s*(?:(?:re|fw|fwd)\s*:\s*)*Scheduler Health Check \d{4}-\d{2}-\d{2}/i.test((x && x.subject) || ''); }
+function openEmail(x) {
+  var req = x.reqId ? getReq(x.reqId) : null;
+  if (req) { go(null, req.id); return; }
+  STATE.inFocus = x.id;
+  if (x.status !== 'new') { INBOX.show = 'all'; lsSet('inShow', 'all'); }
+  go('inbox');
 }
 function inboxCard(x) {
   var c = el('div', 'fu' + (x.status === 'new' ? '' : ' soon'));
+  c.setAttribute('data-in', x.id);
   c.style.borderLeftColor = x.status === 'new' ? 'var(--sky)' : 'var(--border-strong)';
   c.style.alignItems = 'flex-start';
   var req = x.reqId ? getReq(x.reqId) : null;
@@ -1990,7 +2010,7 @@ function inboxCard(x) {
   who.innerHTML = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px">' + st + '<span class="small muted">' + esc(fmtDay(x.receivedAt, VIEW_TZ) + ' ' + fmtTime(x.receivedAt, VIEW_TZ)) + (x.mailbox ? ' · to ' + esc(x.mailbox) : '') + '</span></div>' +
     '<b>' + esc(x.subject) + '</b><span>From ' + esc(displayName(x)) + ' &lt;' + esc(x.from) + '&gt;</span>' +
     '<div class="small" style="color:var(--ink-2);margin-top:6px">' + esc(snip) + (String(x.body || '').length > 260 ? '…' : '') + '</div>';
-  var more = el('button', 'linkbtn small', 'Show the whole email'); more.type = 'button'; more.style.marginTop = '6px';
+  var more = el('button', 'linkbtn small in-more', 'Show the whole email'); more.type = 'button'; more.style.marginTop = '6px';
   var pre = el('pre', 'src'); pre.hidden = true; pre.style.marginTop = '8px'; pre.textContent = emailText(x);
   more.onclick = function () { pre.hidden = !pre.hidden; more.textContent = pre.hidden ? 'Show the whole email' : 'Hide the email'; };
   if (x.robotNote) who.appendChild(el('div', 'small', '<span class="auto-tag" style="margin:6px 6px 0 0">Scheduler</span>' + esc(x.robotNote)));
@@ -2559,7 +2579,7 @@ function viewDash(app) {
   var booked = all.filter(function (r) { return r.status === 'booked'; });
   var bookedWeek = booked.filter(function (r) { return (r.bookedAt || 0) > weekAgo; });
   var coming = booked.map(function (r) { return { r: r, sl: slotById(r, r.chosen) }; }).filter(function (x) { return x.sl && x.sl.e > now; }).sort(function (a, b) { return a.sl.s - b.sl.s; });
-  var inbox = inboxItems(), inWeek = inbox.filter(function (x) { return (x.receivedAt || 0) > weekAgo; });
+  var inbox = inboxItems().filter(function (x) { return !isHealthMail(x); }), inWeek = inbox.filter(function (x) { return (x.receivedAt || 0) > weekAgo; });
   var guestsWaiting = 0, guestsIn = 0;
   polls.forEach(function (r) { (r.guests || []).forEach(function (g) { if (g.answer) guestsIn++; else if (g.sentAt) guestsWaiting++; }); });
   var needN = approvals.length + looks.length + due.length;
@@ -2720,7 +2740,7 @@ function viewDash(app) {
   var ib = dashPanel('Incoming Email', 'scheduling@mismo.org', 'All Email', function () { go('inbox'); });
   inbox.slice(0, 5).forEach(function (x) {
     var req = x.reqId ? getReq(x.reqId) : null;
-    ib.rows.appendChild(dashRow({ cls: 'r3', k: x.status === 'started' ? '#5fd39a' : x.status === 'dismissed' ? '#9fb3c8' : '#f0b94a', nm: x.subject || '(no subject)', small: displayName(x) + (x.robotNote ? ' · ' + x.robotNote : ''), age: shortAgo(x.receivedAt || now), go: function () { if (req) go(null, req.id); else go('inbox'); } }));
+    ib.rows.appendChild(dashRow({ cls: 'r3', k: x.status === 'started' ? '#5fd39a' : x.status === 'dismissed' ? '#9fb3c8' : '#f0b94a', nm: x.subject || '(no subject)', small: displayName(x) + (x.robotNote ? ' · ' + x.robotNote : ''), age: shortAgo(x.receivedAt || now), go: function () { openEmail(x); } }));
   });
   if (!inbox.length) ib.p.appendChild(el('div', 'empty', 'Nothing has come in yet. Emails to scheduling@mismo.org show here a few minutes after they arrive.'));
   R.appendChild(ib.p);
@@ -3035,7 +3055,7 @@ function viewStats(app) {
 
   row(); L.appendChild(pollsP);
   /* ---- email intake ---- */
-  var mail = inboxItems().filter(function (x) { return (x.receivedAt || 0) >= from; });
+  var mail = inboxItems().filter(function (x) { return (x.receivedAt || 0) >= from && !isHealthMail(x); });
   var became = mail.filter(function (x) { return x.status === 'started' || allReqs().some(function (r) { return r.inboxId === x.id; }); }).length;
   var robotMade = reqs.filter(function (r) { return r.createdBy === 'Scheduler' || (r.robot && r.robot.auto && r.robot.readBy); });
   var byClaude = robotMade.filter(function (r) { return r.robot && r.robot.readBy === 'claude'; }).length;
