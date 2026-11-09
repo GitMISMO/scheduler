@@ -246,18 +246,29 @@ c57 -33 76 -84 76 -200 0 -116 -19 -167 -76 -200 -32 -19 -52 -20 -294 -20
       $('send').disabled = false;
       $('say').textContent = err.code === 'TOO_MANY' ? 'Several answers were just sent from here. Please try again in a few minutes.' :
         err.code === 'CLOSED' ? 'This meeting has just been booked, so answers are closed.' :
-        err.code === 'OFFLINE' ? 'Couldn’t connect. Check your internet connection and press Send again.' :
+        err.code === 'OFFLINE' ? 'Couldn’t connect. Press Send again; if it still won’t go, your network may be blocking it, so reply to the email with the times that work instead.' :
         'Your answers couldn’t be saved just now. Please try again in a minute.';
       $('say').style.color = 'var(--bad)';
     });
   });
 
   if (!R || !G) { note('bad', '<b>This link isn’t complete.</b> Open it straight from the email you received, or reply to that email with the times that work for you.'); return; }
-  setTimeout(function () { call('view', { r: R, g: G }).then(show, function (err) {
-    if (err.code === 'NOT_FOUND' || err.status === 404 || err.code === 'BAD_LINK') note('bad', '<b>This link doesn’t match a meeting.</b> It may have been replaced. Reply to the email you received with the times that work for you.');
-    else if (err.code === 'TOO_MANY') note('warn', 'Too many tries from here in a short time. Please wait a few minutes and reload.');
-    else note('bad', 'Your times couldn’t be loaded just now. Please reload the page in a minute' + (err.code === 'OFFLINE' ? ' (check your internet connection)' : '') + ', or reply to the email with the times that work for you.');
-  }); }, PREVIEW ? 150 : 0);
+  /* A brief blip shouldn't send a guest away: try three times (now, after 2 s, after 5 s) before
+     saying anything. If the browser can't connect at all, the usual cause is a company web
+     filter that blocks the scheduling service's address (seen at a mortgage lender in Nov 2026),
+     so say that plainly and offer the two ways round it. */
+  var BLOCKED = '<b>This page couldn’t reach MISMO’s scheduling service from your network.</b> Some company networks block it. ' +
+    'Please reply to the email you received with the days and times that work for you (we read every reply), or open the link on your phone using mobile data instead of the office Wi-Fi.';
+  function load(n) {
+    call('view', { r: R, g: G }).then(show, function (err) {
+      if ((err.code === 'OFFLINE' || err.status >= 500) && n < 2) { note('', 'Loading the times…'); setTimeout(function () { load(n + 1); }, n ? 5000 : 2000); return; }
+      if (err.code === 'NOT_FOUND' || err.status === 404 || err.code === 'BAD_LINK') note('bad', '<b>This link doesn’t match a meeting.</b> It may have been replaced. Reply to the email you received with the times that work for you.');
+      else if (err.code === 'TOO_MANY') note('warn', 'Too many tries from here in a short time. Please wait a few minutes and reload.');
+      else if (err.code === 'OFFLINE') note('bad', BLOCKED);
+      else note('bad', 'Your times couldn’t be loaded just now. Please reload the page in a minute, or reply to the email you received with the times that work for you.');
+    });
+  }
+  setTimeout(function () { load(0); }, PREVIEW ? 150 : 0);
 })();
 </script>
 </body>
