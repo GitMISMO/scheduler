@@ -441,7 +441,10 @@ function keepGuestAnswers(onFile, mine) {
     var robot = Object.assign({}, sr || out.robot || {}, out.robotEdit || {});
     delete out.robotEdit;
     out.robot = robot;
-    if (sr && sr.auto && robot.auto) {
+    /* …but a request the Scheduler handed to a person ("Needs Attention") is the staff
+       member's again: times picked there must save (on Nov 9 they were silently replaced by
+       the file's empty list, so Pick Times on the ICE request seemed to do nothing) */
+    if (sr && sr.auto && robot.auto && sr.stage !== 'person') {
       var staffClosed = (out.status === 'booked' || out.status === 'cancelled') && out.status !== onFile.status;
       if (!staffClosed) { out.status = onFile.status; out.chosen = onFile.chosen; out.bookedAt = onFile.bookedAt; }
       if (Array.isArray(onFile.slots)) out.slots = onFile.slots;
@@ -1695,7 +1698,8 @@ function robotPanel(req, editable) {
       var r = clone(req); r.robotEdit = { auto: false }; put(r, 'Took over from the Scheduler'); }));
     else acts.appendChild(btn(look ? 'Hand Back to the Scheduler' : 'Let the Scheduler Handle It', 'sm', function () {
       var r = clone(req), sent = (r.guests || []).some(function (g) { return g.sentAt; });
-      r.robotEdit = { auto: true, stage: (r.slots || []).length && sent ? 'polling' : 'new', why: '', round: 1, stalled: 0, readBy: R.readBy === 'claude' ? 'claude' : 'checked', requester: R.requester || { name: r.askedBy || '', email: r.askedByEmail || '' } };
+      /* times already on it (picked by hand, or a poll already out): the Scheduler polls with those */
+      r.robotEdit = { auto: true, stage: (r.slots || []).some(function (x) { return x.s > Date.now(); }) ? 'polling' : 'new', why: '', round: 1, stalled: 0, readBy: R.readBy === 'claude' ? 'claude' : 'checked', requester: R.requester || { name: r.askedBy || '', email: r.askedByEmail || '' } };
       put(r, look ? 'Handed back to the Scheduler' : 'Handed to the Scheduler'); toast('The Scheduler will pick it up within a few minutes.'); }));
   }
   return p;
@@ -2257,13 +2261,16 @@ function openPicker(req) {
     if (!keys.length) { toast('Pick at least one time.'); return; }
     var r = clone(getReq(req.id));
     var old = {}; (r.slots || []).forEach(function (s) { old[s.s] = s; });
-    r.slots = keys.map(function (s) { return old[s] ? Object.assign({}, old[s], { e: s + dur }) : { id: rid(5), s: s, e: s + dur }; });
+    /* staff: true — a person chose it, so the Scheduler keeps it on the poll even if Outlook shows someone busy */
+    r.slots = keys.map(function (s) { return old[s] ? Object.assign({}, old[s], { e: s + dur }) : { id: rid(5), s: s, e: s + dur, staff: true, added: Date.now() }; });
     var ids = r.slots.map(function (s) { return s.id; });
     (r.guests || []).forEach(function (g) { if (g.answer) { g.answer.yes = (g.answer.yes || []).filter(function (x) { return ids.indexOf(x) >= 0; }); g.answer.maybe = (g.answer.maybe || []).filter(function (x) { return ids.indexOf(x) >= 0; }); } });
     put(r, 'Offered ' + keys.length + ' times');
     D.close();
     var unsent = (r.guests || []).filter(function (g) { return !g.sentAt && !g.answer; });
-    if (unsent.length) setTimeout(function () { toast('Next: \u201cDraft the invitation email\u201d under Outside guests.'); }, 300);
+    var RR = r.robot || {};
+    if (RR.auto && RR.stage === 'person' && unsent.length) setTimeout(function () { toast('Saved. Press \u201cHand Back to the Scheduler\u201d and it sends the poll with these times.'); }, 300);
+    else if (unsent.length && !RR.auto) setTimeout(function () { toast('Next: \u201cDraft the invitation email\u201d under Outside guests.'); }, 300);
   };
   draw();
   /* start the grid at about 8 AM */
@@ -2799,7 +2806,7 @@ var HELP = [
     '<tr><td><b>Waiting for Approval</b></td><td>A time works for everyone. It is held, so no other request can take it.</td><td>Approve it, or press Book under a different time.</td></tr>' +
     '<tr><td><b>Waiting on Replies, in Needs You</b></td><td>Everyone has answered and no time works for all of them. Nothing more goes out until you decide.</td><td>Book the closest time, make someone optional, or press Send New Times. See When No Time Works.</td></tr>' +
     '<tr><td><b>Booked</b></td><td>Everyone has the Outlook invitation with the Zoom room link.</td><td>Nothing. If the invitation couldn’t go by itself, Vanessa gets Booked, Send the Invite with a button that opens it in Outlook.</td></tr>' +
-    '<tr><td><b>Needs a Look</b></td><td>The Scheduler stopped and told Vanessa why.</td><td>Fix what’s needed, then Hand Back to the Scheduler, or carry on by hand.</td></tr>' +
+    '<tr><td><b>Needs a Look</b></td><td>The Scheduler stopped and told Vanessa why.</td><td>Fix what’s needed, then Hand Back to the Scheduler, or carry on by hand. If it couldn’t find a time, use <b>Pick Times</b> to choose some yourself (even ones where Outlook shows someone busy), then Hand Back: it sends the poll with your times and keeps them on it.</td></tr>' +
     '<tr><td><b>Couldn’t Schedule</b></td><td>Closed after we tried and no time could be found. Kept on the Dashboard for reference.</td><td>Bring it back from the request to try again.</td></tr>' +
     '<tr><td><b>Cancelled</b></td><td>Stopped for good.</td><td>Bring it back from the request if needed.</td></tr></tbody></table>' +
     '<h3>Rules It Follows</h3><ul><li>Times are offered 9:00 AM to 5:00 PM Eastern, on working days only. Fridays between Memorial Day and Labor Day end at 1:00 PM.</li><li>MISMO holidays are never offered: MLK Day, Presidents’ Day, Memorial Day, Juneteenth, Independence Day, Labor Day, Veterans Day, Thanksgiving and the day after, and Winter Break.</li><li>A poll offers up to six times spread over the coming working days, one a day first and never more than two a day, starting the next working day.</li><li>If the email limits the dates (for example “the week of the 16th”), every time on the poll is inside them. Times someone suggests for themselves (“Thursday 1–3 works”) are tried first, and if they don’t work the poll offers other times.</li><li>Tentative in Outlook counts as busy when offering new times.</li><li>If Outlook information is missing or more than six hours old, nothing is decided until it is fresh. If it stays missing for a working day, Vanessa is told.</li><li>Once people have answered, the Scheduler never sends a second set of times on its own: Vanessa or Jonna decide. (If nobody has answered and the times simply run out, it refreshes them.)</li><li>If someone outside MISMO asks for a meeting that includes other outside people (anyone not at their own organization, or anyone at all when they write from a personal address like Gmail), nobody is emailed until Vanessa or Jonna check it and press <b>Send the Poll</b>. This stops anyone using the scheduling mailbox to email strangers. Requests from MISMO staff are never held.</li><li>A guest marked optional doesn’t have to be free for a time to work, and is invited as optional.</li><li>If someone from MISMO is out of office for all the days asked for (or the coming week, when no days are named), the Scheduler doesn’t wait for them: it goes ahead with the others and invites them as optional. It never does this for the person who asked, or when they’re the only one from MISMO on the meeting.</li><li>Meetings can be any length. The length comes from the email (for example “an hour”) or from Edit details; changing it while a poll is out swaps in fresh times at the new length.</li><li>Zoom meetings use a MISMO Zoom room: membership meetings (a name or purpose that says membership) use the membership room (membership@mismo.org, 501 516 3748); everything else uses the main MISMO room (info@mismo.org, 282 517 5426). Two Scheduler meetings never share a room at the same time, and each room keeps clear of its own account’s calendar. The main room also keeps clear of the workgroup meetings on the Meeting Trackers schedule.</li></ul>'; } },
