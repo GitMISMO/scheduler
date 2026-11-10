@@ -33,7 +33,7 @@ if (window.SCHED_PREVIEW) document.documentElement.removeAttribute('data-rs-gate
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="scheduler.css?v=20261109a">
+<link rel="stylesheet" href="scheduler.css?v=20261110a">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><symbol id="mismo-logo" viewBox="0 0 708 108"><g transform="translate(0.000000,108.000000) scale(0.100000,-0.100000)" fill="var(--logo-body, #0f314c)"><path d="M5917 1065 c-169 -46 -279 -153 -335 -323 -21 -65 -25 -96 -25 -197
@@ -104,6 +104,9 @@ c57 -33 76 -84 76 -200 0 -116 -19 -167 -76 -200 -32 -19 -52 -20 -294 -20
     <button type="button" data-hq="stats" title="Statistics">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V11M10 20V5M16 20v-6M21 20H3"/></svg>
       <span>Statistics</span></button>
+    <button type="button" data-hq="health" title="System Health">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2.5-6 4 12 2.5-6H21"/></svg>
+      <span>System Health</span><i class="hnav unk" id="health-dot" aria-hidden="true"></i></button>
   </nav>
   <div class="mast-right">
     <button class="theme-btn" id="help-btn" type="button" title="Help" data-hq="help">
@@ -119,9 +122,9 @@ c57 -33 76 -84 76 -200 0 -116 -19 -167 -76 -200 -32 -19 -52 -20 -294 -20
 </aside>
 <main id="app" aria-live="polite"></main>
 <script src="timesform.js?v=20261109a"></script>
-<script src="scheduler.js?v=20261109b"></script>
+<script src="scheduler.js?v=20261110a"></script>
 
-<script src="rail.js?v=20261109a"></script>
+<script src="rail.js?v=20261110a"></script>
 
 </body>
 </html>

@@ -1061,7 +1061,7 @@ function followList(mineOnly) {
    ====================================================================== */
 var PANE_VIEWS = ['inbox', 'follow', 'list', 'new', 'cal'];
 var STATE = { tab: 'dash', pane: null, reqId: null, fuMine: lsGet('fuMine', true), listMine: lsGet('listMine', false), listShow: lsGet('listShow', 'active') };
-var PAGES = ['dash', 'stats', 'help'];
+var PAGES = ['dash', 'stats', 'health', 'help'];
 function readHash() {
   var h = location.hash.replace(/^#/, ''), m = /(?:^|&)r=([a-z0-9]+)/.exec(h), t = /(?:^|&)tab=([a-z]+)/.exec(h);
   STATE.reqId = m ? m[1] : null;
@@ -1100,7 +1100,8 @@ function render(opts) {
   if (PREVIEW) app.appendChild(el('div', 'preview-band', '<b>Preview.</b> This is the Scheduler with sample data (made-up example requests). Nothing you do here is saved or sent. On resources.mismo.org it uses your team’s real data and Outlook availability.'));
   if (DB.problem) app.appendChild(el('div', 'notice bad', esc(DB.problem)));
   if (!DB.loaded) { app.appendChild(el('div', 'empty', '<span class="spinner"></span> Loading…')); return; }
-  (STATE.tab === 'help' ? viewHelp : STATE.tab === 'stats' ? viewStats : viewDash)(app);
+  (STATE.tab === 'help' ? viewHelp : STATE.tab === 'stats' ? viewStats : STATE.tab === 'health' ? viewHealth : viewDash)(app);
+  healthDot();
   if (!full) window.scrollTo(0, y);
   if (keepFocus && document.getElementById(keepFocus)) try { document.getElementById(keepFocus).focus(); } catch (e) {}
 }
@@ -1839,35 +1840,89 @@ var H_LABEL = { emailLoop: 'Email In and Out', availability: 'Outlook Availabili
 function robotCheck(h, now) {
   var p = parts(now, ET), wd = !isWeekend(p.iso), last = h && h.lastRunAt;
   if (!last) return { state: 'unk', label: 'Scheduler Robot', msg: 'No run recorded yet.' };
-  if (wd && p.h >= 9 && p.h < 18 && now - last > 2.5 * 36e5) return { state: 'down', label: 'Scheduler Robot', msg: 'Hasn’t run since ' + whenAgo(last) + '. GitHub Actions may be paused or out of minutes; nothing is being decided or sent.', at: last };
+  if (wd && p.h >= 9 && p.h < 18 && now - last > 2.5 * 36e5) return { state: 'down', label: 'Scheduler Robot', msg: 'Hasn’t run since ' + whenAgo(last) + '. Nothing new is being decided or sent until it does. New emails and saves still start it straight away.', at: last };
   return { state: 'ok', label: 'Scheduler Robot', msg: 'Running normally.', at: last };
 }
-function healthStrip() {
+/* every check as one list: the robot (worked out here) and the robot's own checks */
+function healthRows() {
   var h = HEALTH.data, now = Date.now(), rows = [];
-  if (!HEALTH.loaded || PREVIEW) return null;
-  rows.push(robotCheck(h, now));
-  if (h && h.checks) Object.keys(H_LABEL).forEach(function (k) { var c = h.checks[k]; if (c) rows.push({ state: c.state, label: H_LABEL[k], msg: c.msg + (k === 'claude' && h.claudeModel ? ' Model: ' + h.claudeModel + (h.modelPinned ? ' (pinned).' : ' (newest Sonnet, not pinned).') : ''), at: c.at, since: c.since }); });
+  var rc = robotCheck(h, now); rc.key = 'robot'; rows.push(rc);
+  if (h && h.checks) Object.keys(H_LABEL).forEach(function (k) { var c = h.checks[k]; if (c) rows.push({ key: k, state: c.state, label: H_LABEL[k], msg: c.msg + (k === 'claude' && h.claudeModel ? ' Model: ' + h.claudeModel + (h.modelPinned ? ' (pinned).' : ' (newest Sonnet, not pinned).') : ''), at: c.at, since: c.since }); });
+  return rows;
+}
+function healthOverall(rows) {
+  if (!HEALTH.data) return 'unk';
+  return rows.some(function (r) { return r.state === 'down'; }) ? 'down' : rows.some(function (r) { return r.state === 'warn'; }) ? 'warn' : 'ok';
+}
+/* the dot on the System Health button in the left menu */
+function healthDot() {
+  var d = document.getElementById('health-dot'); if (!d) return;
+  var o = HEALTH.loaded && !PREVIEW ? healthOverall(healthRows()) : 'unk';
+  d.className = 'hnav ' + o; d.title = o === 'down' ? 'Something needs a look' : o === 'warn' ? 'A warning' : o === 'ok' ? 'Everything is working' : '';
+}
+/* where to look when a check is red, and the page that fixes it */
+var H_FIX = {
+  robot: ['GitHub runs the robot. Look at Actions for scheduler-data: the workflow may be turned off, failing, or blocked by billing. GitHub’s own timed runs can be hours late; the Hourly Check flow in Power Automate covers for that.', 'https://github.com/GitMISMO/scheduler-data/actions', 'GitHub Actions'],
+  emailLoop: ['Look at the run history of the Scheduler - Send Emails and Scheduler - Email Watcher flows. A flow may be turned off or have lost its sign-in.', 'https://make.powerautomate.com/', 'Power Automate'],
+  availability: ['Look at the Scheduler - Team Availability flow, which reads Outlook every half hour.', 'https://make.powerautomate.com/', 'Power Automate'],
+  sending: ['Look at the Scheduler - Send Emails flow’s run history for the error.', 'https://make.powerautomate.com/', 'Power Automate'],
+  invites: ['Open the request and send the invitation from there.', null, ''],
+  claude: ['Usually clears on its own on the next email. If it lasts a day, the Claude key (ANTHROPIC_API_KEY) may need renewing.', null, ''],
+  storage: ['Finished requests move to the archive a month after their meeting. If this stays high, check that the robot’s timed runs are happening.', null, ''],
+  runs: ['Usually a Scheduler tab left open that keeps saving. Closing it stops it.', null, '']
+};
+var H_WORD = { ok: 'Working', warn: 'Warning', down: 'Not working', unk: 'Not known yet' };
+function viewHealth(app) {
+  var h = HEALTH.data, rows = healthRows(), overall = healthOverall(rows), now = Date.now();
+  var head = el('div', 'stathead');
+  head.appendChild(el('div', null, '<h1>System Health</h1><p>Everything the Scheduler depends on, checked every time the robot runs.</p>'));
+  app.appendChild(head);
+  if (PREVIEW) { app.appendChild(el('div', 'notice', 'The health check reads the live Scheduler, so it shows on resources.mismo.org, not in the preview.')); return; }
+  if (!HEALTH.loaded) { app.appendChild(el('div', 'empty', '<span class="spinner"></span> Loading…')); return; }
   var bad = rows.filter(function (r) { return r.state === 'down'; }), meh = rows.filter(function (r) { return r.state === 'warn'; });
-  var overall = bad.length ? 'down' : meh.length ? 'warn' : (h ? 'ok' : 'unk');
-  var open = STATE.healthOpen != null ? STATE.healthOpen : overall !== 'ok';
-  var box = el('div', 'hstrip' + (overall === 'down' || overall === 'warn' ? ' ' + overall : ''));
-  var head = el('button'); head.type = 'button'; head.setAttribute('aria-expanded', String(open));
-  var say = overall === 'down' ? '<b>' + esc(bad.map(function (r) { return r.label; }).join(', ')) + (bad.length === 1 ? ' needs' : ' need') + ' a look.</b> Vanessa and Jonna have been emailed.'
-    : overall === 'warn' ? '<b>Mostly fine.</b> Keep an eye on ' + esc(meh.map(function (r) { return r.label; }).join(', ')) + '.'
-    : overall === 'unk' ? '<b>Health check starting.</b> The robot reports in on its next run.'
-    : '<b>Everything is working.</b> Emails come in and go out, Outlook is current, and the robot ran ' + esc(whenAgo(h.lastRunAt)) + '.';
-  head.innerHTML = '<span class="hdot ' + (overall === 'ok' ? '' : overall) + '" aria-hidden="true"></span><span>' + say + '</span><span class="hs-more">' + (open ? 'Hide details' : 'Details') + '</span>';
-  head.onclick = function () { STATE.healthOpen = !open; render(); };
-  box.appendChild(head);
-  if (open) {
-    var ul = el('ul', 'hlist');
-    rows.forEach(function (r) {
-      ul.appendChild(el('li', null, '<span class="hdot ' + (r.state === 'ok' ? '' : r.state) + '" aria-hidden="true"></span><div><b>' + esc(r.label) + '</b> <span class="sr-only">(' + esc(r.state === 'ok' ? 'working' : r.state === 'warn' ? 'warning' : r.state === 'down' ? 'not working' : 'unknown') + ')</span>· ' + esc(r.msg || '') +
-        (r.at ? ' <span class="ha">' + esc(whenAgo(r.at)) + '</span>' : '') + (r.state === 'down' && r.since ? ' <span class="ha">· first noticed ' + esc(whenAgo(r.since)) + '</span>' : '') + '</div>'));
-    });
-    box.appendChild(ul);
+  var sum = el('div', 'hsum ' + overall);
+  sum.innerHTML = '<span class="hdot big ' + (overall === 'ok' ? '' : overall) + '" aria-hidden="true"></span><div><b>' +
+    (overall === 'down' ? esc(bad.map(function (r) { return r.label; }).join(', ')) + (bad.length === 1 ? ' needs' : ' need') + ' a look.'
+      : overall === 'warn' ? 'Mostly fine. Keep an eye on ' + esc(meh.map(function (r) { return r.label; }).join(', ')) + '.'
+      : overall === 'unk' ? 'The health check starts on the robot’s next run.'
+      : 'Everything is working.') + '</b><span>' +
+    (overall === 'down' ? 'Vanessa (Jonna copied) was emailed when it stopped, and is emailed again when it’s working.' : 'Emails come in and go out, Outlook is current, and the robot ran ' + esc(h && h.lastRunAt ? whenAgo(h.lastRunAt) : 'not yet') + '.') +
+    '</span></div>';
+  app.appendChild(sum);
+
+  /* anything not working gets a full-width card with what to do; the working checks share one
+     tidy panel, so there are no half-empty cards */
+  var probs = rows.filter(function (r) { return r.state === 'down' || r.state === 'warn'; }), fine = rows.filter(function (r) { return probs.indexOf(r) < 0; });
+  probs.sort(function (a, b) { return (a.state === 'down' ? 0 : 1) - (b.state === 'down' ? 0 : 1); }).forEach(function (r) {
+    var fix = H_FIX[r.key] || ['', null, ''];
+    app.appendChild(el('div', 'hcard ' + r.state, '<div class="hc-top"><span class="hdot ' + r.state + '" aria-hidden="true"></span><b>' + esc(r.label) + '</b><span class="hc-state">' + esc(H_WORD[r.state]) + '</span></div>' +
+      '<p>' + esc(r.msg || '') + '</p>' +
+      '<div class="hc-meta">' + (r.at ? 'Last good: ' + esc(whenAgo(r.at)) : '') + (r.since ? (r.at ? ' · ' : '') + 'Since ' + esc(whenAgo(r.since)) : '') + '</div>' +
+      (fix[0] ? '<div class="hc-fix"><b>What to do:</b> ' + esc(fix[0]) + (fix[1] ? ' <a href="' + esc(fix[1]) + '" target="_blank" rel="noopener">Open ' + esc(fix[2]) + '</a>' : '') + '</div>' : '')));
+  });
+  if (fine.length) {
+    var ok = el('div', 'panel hok');
+    ok.innerHTML = '<div class="hd-head"><h3>' + (probs.length ? 'Working' : 'Every Check') + '</h3><span>' + fine.length + (fine.length === 1 ? ' check' : ' checks') + '</span></div><ul class="hok-list">' +
+      fine.map(function (r) {
+        return '<li><span class="hdot ' + (r.state === 'ok' ? '' : r.state) + '" aria-hidden="true"></span><div><b>' + esc(r.label) + '</b><span>' + esc(r.msg || '') + (r.at ? ' <em>' + esc(whenAgo(r.at)) + '</em>' : '') + '</span></div></li>';
+      }).join('') + '</ul>';
+    app.appendChild(ok);
   }
-  return box;
+
+  /* the last 30 days, one square a day */
+  var hist = (h && Array.isArray(h.history) ? h.history : []).slice(-30);
+  var pan = el('div', 'panel hdays');
+  var days = '';
+  hist.forEach(function (d) {
+    var t = fmtDay(at(d.date, 720, ET), ET) + ': ' + (d.worst === 'ok' ? 'all working' : (d.worst === 'down' ? 'something stopped' : 'a warning') + ((d.issues || []).length ? ' (' + d.issues.join(', ') + ')' : '')) + (d.runs != null ? ' · ' + d.runs + ' robot runs' : '');
+    days += '<i class="' + esc(d.worst || 'ok') + '" title="' + esc(t) + '" aria-label="' + esc(t) + '"></i>';
+  });
+  var greens = hist.filter(function (d) { return d.worst === 'ok'; }).length;
+  pan.innerHTML = '<div class="hd-head"><h3>The Last 30 Days</h3><span>' + (hist.length ? greens + ' of ' + hist.length + ' days with everything working' : 'Days appear here as the check runs') + '</span></div>' +
+    '<div class="hd-row" role="list">' + days + '</div>' +
+    '<div class="hd-key"><span><i class="ok"></i>All working</span><span><i class="warn"></i>A warning</span><span><i class="down"></i>Something stopped</span></div>';
+  app.appendChild(pan);
+  app.appendChild(el('p', 'small muted', 'When a check stops working, Vanessa gets one email (Jonna copied), another once a day while it stays down, and one when it’s working again. Details on every check are in Help.'));
 }
 
 /* small changes (status, link to a request), read-modify-write so a newly arrived email is never lost */
@@ -2628,7 +2683,6 @@ function viewDash(app) {
   ring.title = 'Of the requests started in the last 30 days, ' + pct + '% are booked';
   if (!RED()) setTimeout(function () { var a = $('.arc', ring); if (a) a.setAttribute('stroke-dashoffset', off(pct)); }, 80);
   app.appendChild(hero);
-  var hsx = healthStrip(); if (hsx) app.appendChild(hsx);
 
   /* ---- the four boxes ---- */
   var tiles = el('div', 'dash-tiles');
@@ -2879,9 +2933,9 @@ var HELP = [
     '<tr><td>No time in the next three weeks when everyone from MISMO is free</td><td>Free up a calendar or offer times by hand.</td></tr>' +
     '<tr><td>Outlook information missing for a working day</td><td>Tell Jonna: the Team Availability flow in Power Automate may have stopped.</td></tr>' +
     '<tr><td>An email failed five times</td><td>Tell Jonna: the Send Emails flow in Power Automate may need attention.</td></tr></tbody></table>'; } },
-  { id: 'health', k: '#0f7b5c', t: 'Health Check', h: function () { return '<h2>Health Check</h2><p class="lead">The strip under the greeting on the Dashboard says whether every part of the Scheduler is working. Green means it is. If something stops, Vanessa gets an email (Jonna copied) once when it happens, once a day while it lasts, and once when it’s working again.</p>' +
+  { id: 'health', k: '#0f7b5c', t: 'Health Check', h: function () { return '<h2>Health Check</h2><p class="lead">The <b>System Health</b> tab in the left menu says whether every part of the Scheduler is working, with what to do for anything that isn’t and a square for each of the last 30 days. The dot beside it in the menu turns amber or red when something needs a look. Green means it’s working. If something stops, Vanessa gets an email (Jonna copied) once when it happens, once a day while it lasts, and once when it’s working again.</p>' +
     '<table><thead><tr><th>Check</th><th>How it knows</th><th>If it’s red</th></tr></thead><tbody>' +
-    '<tr><td><b>Scheduler Robot</b></td><td>The robot runs at least every two hours on working days. The page notices when it hasn’t.</td><td>Open GitHub, scheduler-data, Actions. Check the workflow isn’t turned off and the account hasn’t run out of Actions minutes.</td></tr>' +
+    '<tr><td><b>Scheduler Robot</b></td><td>The robot runs on every email and save, and every hour on working days (the Scheduler - Hourly Check flow, with GitHub’s own timer as a backup). The page notices when it hasn’t run for 2½ hours in working hours.</td><td>Open GitHub, scheduler-data, Actions. Check the workflow isn’t turned off and that billing isn’t blocking it, and that the Hourly Check flow is on in Power Automate.</td></tr>' +
     '<tr><td><b>Email In and Out</b></td><td>At 8 AM Eastern each working day the robot sends a short test email to scheduling@mismo.org. It goes out through the Send Emails flow and comes back through the Email Watcher flow, so one test proves both. It should be back within two hours.</td><td>In Power Automate, check the run history of Scheduler - Send Emails and Scheduler - Email Watcher. A flow that was turned off or lost its sign-in shows there.</td></tr>' +
     '<tr><td><b>Outlook Availability</b></td><td>The Team Availability flow refreshes everyone’s Outlook every half hour.</td><td>Check Scheduler - Team Availability in Power Automate. Until it’s fresh, no new times are offered.</td></tr>' +
     '<tr><td><b>Sending Emails</b></td><td>Emails the Send Emails flow refused in the last day.</td><td>Check the flow’s run history. Each failed email is retried, and after five tries Vanessa is told which one.</td></tr>' +

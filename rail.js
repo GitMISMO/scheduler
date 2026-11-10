@@ -202,7 +202,7 @@
 
 /* --- rail buttons drive the page's own router --- */
 (function railroute(){
-  var RAIL_TABS=['dash','stats','help'];
+  var RAIL_TABS=['dash','stats','health','help'];
   function mark(tab){
     document.querySelectorAll('.rail nav button[data-hq], #help-btn[data-hq]').forEach(function(b){
       if(b.getAttribute('data-hq')===tab) b.setAttribute('aria-current','page');
