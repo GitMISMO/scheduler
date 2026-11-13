@@ -881,6 +881,15 @@ function tidyText(t) {
     .replace(/\s{2,}/g, ' ').replace(/\s+([”"])/g, '$1').trim();
 }
 function couldntSchedule(r) { return !!(r && r.status === 'cancelled' && r.closed === 'unscheduled'); }
+/* the same meeting asked for twice (e.g. a second email that started a second request): closed and
+   left out of every count, so Statistics count the meeting once */
+function isDuplicate(r) { return !!(r && r.status === 'cancelled' && r.closed === 'duplicate'); }
+function closeDuplicate(req) {
+  if (!confirm('Close “' + (req.title || 'this request') + '” as a duplicate? Use this when the same meeting has another request. It’s left out of Statistics and the Scheduler stops emailing about it. You can bring it back later.')) return;
+  var r = clone(getReq(req.id) || req); r.status = 'cancelled'; r.closed = 'duplicate'; r.closedAt = Date.now(); r.closedBy = me().name;
+  if (r.robot && r.robot.auto) r.robotEdit = { auto: false };
+  put(r, 'Closed as a duplicate'); toast('Closed as a duplicate.');
+}
 function bookedSlot(r) { return r && r.status === 'booked' ? slotById(r, r.chosen) : null; }
 function isPast(r) { var s = bookedSlot(r); return !!(s && s.e <= Date.now()); }
 /* Someone set the meeting up themselves (for example Amy sent her own Outlook invitation): record
@@ -1565,10 +1574,11 @@ function viewDetail(app, req) {
     }
     bk.appendChild(ba); app.appendChild(bk);
   }
-  if (req.status === 'cancelled') app.appendChild(el('div', 'notice warn', (couldntSchedule(req) ? '<b>We couldn’t find a time for this one.</b> Closed' + (req.closedBy ? ' by ' + esc(first(req.closedBy)) : '') + (req.closedAt ? ' ' + esc(fmtDay(req.closedAt, VIEW_TZ)) : '') + '. ' : '<b>This request was cancelled.</b> ') + (canEdit() && !isArchived(req) && couldntSchedule(req) ? '<button class="linkbtn" type="button" id="outside">It Was Scheduled Outside the Scheduler</button> · ' : '') + (canEdit() ? '<button class="linkbtn" type="button" id="reopen">Bring it back</button>' : '')));
+  if (req.status === 'cancelled') app.appendChild(el('div', 'notice warn', (couldntSchedule(req) ? '<b>We couldn’t find a time for this one.</b> Closed' + (req.closedBy ? ' by ' + esc(first(req.closedBy)) : '') + (req.closedAt ? ' ' + esc(fmtDay(req.closedAt, VIEW_TZ)) : '') + '. ' : isDuplicate(req) ? '<b>Closed as a duplicate</b> of another request for the same meeting. It isn’t counted in Statistics. ' : '<b>This request was cancelled.</b> ') + (canEdit() && !isArchived(req) && couldntSchedule(req) ? '<button class="linkbtn" type="button" id="outside">It Was Scheduled Outside the Scheduler</button> · <button class="linkbtn" type="button" id="dupe">It’s a Duplicate</button> · ' : '') + (canEdit() ? '<button class="linkbtn" type="button" id="reopen">Bring it back</button>' : '')));
   if (req.status === 'cancelled' && req.robot && req.robot.cancelInvite) { var ci = req.robot.cancelInvite; app.appendChild(el('div', 'notice', ci.state === 'done' ? '<b>Meeting cancelled.</b> Everyone was sent Outlook’s cancellation from scheduling@mismo.org.' : ci.state === 'failed' ? '<b>The Outlook invitation couldn’t be cancelled automatically</b> (' + esc(String(ci.lastErr || '').slice(0, 120)) + '). Please cancel it in the scheduling@mismo.org calendar.' : '<b>Cancelling the Outlook invitation…</b> Everyone gets the cancellation within a few minutes.')); }
   if (req.robot) app.appendChild(robotPanel(req, editable));
   if ($('#outside')) $('#outside').onclick = function () { markOutside(req); };
+  if ($('#dupe')) $('#dupe').onclick = function () { closeDuplicate(req); };
   if ($('#reopen')) $('#reopen').onclick = function () { var r = clone(req); r.status = ''; delete r.closed; delete r.closedAt; delete r.closedBy; put(r, 'Brought back'); };
 
   /* times + who can make it */
@@ -1663,6 +1673,7 @@ function viewDetail(app, req) {
     cx.style.marginTop = '14px';
     if (req.status !== 'cancelled') { var so0 = btn('Scheduled Outside the Scheduler', 'ghost sm', function () { markOutside(req); }, 'cal'); so0.style.marginTop = '14px'; so0.style.marginRight = '8px'; lb.appendChild(so0); }
     if (req.status !== 'cancelled') { var cu0 = btn('Close as Couldn’t Schedule', 'ghost sm', function () { closeUnscheduled(req); }); cu0.style.marginTop = '14px'; cu0.style.marginRight = '8px'; lb.appendChild(cu0); }
+    if (req.status !== 'cancelled') { var du0 = btn('Close as Duplicate', 'ghost sm', function () { closeDuplicate(req); }); du0.style.marginTop = '14px'; du0.style.marginRight = '8px'; lb.appendChild(du0); }
     lb.appendChild(cx);
   }
   app.appendChild(pL);
@@ -1678,7 +1689,7 @@ function loadSent() {
 function robotPanel(req, editable) {
   var R = req.robot || {}, look = needsLook(req), on = isAuto(req);
   var p = el('section', 'panel');
-  var sub = couldntSchedule(req) ? 'Couldn’t schedule — closed' : req.status === 'cancelled' ? 'Cancelled' : look ? 'Stopped — needs a person' : awaitingApproval(req) ? 'Found a time — waiting for approval' : !R.auto ? 'Handed over to staff' : req.status === 'booked' ? 'Booked it' : R.stage === 'polling' ? 'Poll out, set ' + (R.round || 1) + ' of times' : 'Working on it';
+  var sub = couldntSchedule(req) ? 'Couldn’t schedule — closed' : isDuplicate(req) ? 'Closed as a duplicate' : req.status === 'cancelled' ? 'Cancelled' : look ? 'Stopped — needs a person' : awaitingApproval(req) ? 'Found a time — waiting for approval' : !R.auto ? 'Handed over to staff' : req.status === 'booked' ? 'Booked it' : R.stage === 'polling' ? 'Poll out, set ' + (R.round || 1) + ' of times' : 'Working on it';
   p.innerHTML = '<div class="panel-h"><h2>Scheduled Automatically</h2><span class="sub">' + esc(sub) + '</span></div>';
   var acts = el('div', 'acts'); $('.panel-h', p).appendChild(acts);
   var b = el('div', 'panel-b'); p.appendChild(b);
@@ -1703,7 +1714,7 @@ function robotPanel(req, editable) {
     b.appendChild(dc);
   }
   if (look) { var lk = el('div', 'notice bad', '<b>The Scheduler stopped because ' + esc(R.why || 'it needs a person') + '.</b> Fix what’s needed (for example <b>Edit details</b> to add who should attend), then hand it back, or take it from here yourself. If someone set it up themselves, mark it Scheduled Outside the Scheduler; if there’s no time that works, close it as Couldn’t Schedule. '); if (editable) { var lko = el('button', 'linkbtn', 'Scheduled Outside the Scheduler'); lko.type = 'button'; lko.onclick = function () { markOutside(req); }; lk.appendChild(lko); lk.appendChild(document.createTextNode(' · ')); var lkb = el('button', 'linkbtn', 'Close as Couldn’t Schedule'); lkb.type = 'button'; lkb.onclick = function () { closeUnscheduled(req); }; lk.appendChild(lkb); } b.appendChild(lk); }
-  if (R.replyAt) b.appendChild(el('div', 'notice', '<b>' + esc(R.replyFrom || 'Someone') + ' replied by email ' + esc(whenAgo(R.replyAt)) + ':</b> “' + esc(R.replySnippet || '') + '”'));
+  if (R.replyAt) b.appendChild(el('div', 'notice', '<b>' + esc(R.replyFrom || 'Someone') + ' replied by email ' + esc(whenAgo(R.replyAt)) + ':</b> “' + esc(tidyText(R.replySnippet || '')) + '”'));
   var rq = R.requester || {};
   var offered = (R.offered || []).map(function (w) { return fmtDay(w.s, VIEW_TZ) + ' ' + fmtTime(w.s, VIEW_TZ) + '–' + fmtTime(w.e, VIEW_TZ); });
   var live = (req.slots || []).filter(function (x) { return x.s > Date.now(); }).length;
@@ -2934,7 +2945,7 @@ var HELP = [
     '<tr><td>Go ahead without someone</td><td>Under Outside guests, press <b>Make optional</b> next to them.</td><td>Times only have to work for the others. If one already does, it’s held for your approval. They’re still invited, as optional.</td></tr>' +
     '<tr><td>Try a fresh set of times</td><td>Press <b>Send New Times</b> (on the Needs You row or on the request).</td><td>New times go on the poll and everyone who answered gets a New Times email.</td></tr>' +
     '<tr><td>Change the length</td><td>Press <b>Edit details</b> and change it (for example to an hour).</td><td>A fresh set of times at the new length goes out.</td></tr>' +
-    '<tr><td>Someone set it up themselves</td><td>Press <b>Scheduled Outside the Scheduler</b> and enter the day and time.</td><td>It moves to Scheduled (and Past Meetings), counts in Statistics, and the Scheduler emails no one about it.</td></tr><tr><td>Give up</td><td>Press <b>Close as Couldn’t Schedule</b>.</td><td>It moves to Couldn’t Schedule on the Dashboard for reference.</td></tr></tbody></table>'; } },
+    '<tr><td>Someone set it up themselves</td><td>Press <b>Scheduled Outside the Scheduler</b> and enter the day and time.</td><td>It moves to Scheduled (and Past Meetings), counts in Statistics, and the Scheduler emails no one about it.</td></tr><tr><td>The same meeting has two requests</td><td>Press <b>Close as Duplicate</b> on the extra one (or <b>It’s a Duplicate</b> if it was already closed).</td><td>It’s left out of Statistics, so the meeting counts once.</td></tr><tr><td>Give up</td><td>Press <b>Close as Couldn’t Schedule</b>.</td><td>It moves to Couldn’t Schedule on the Dashboard for reference.</td></tr></tbody></table>'; } },
   { id: 'dash', k: '#f0b94a', t: 'The Dashboard', h: function () { return '<h2>Reading the Dashboard</h2><p class="lead">Everything is on one page. Click any row to open it in the panel on the right; press × or Escape to close it.</p>' +
     '<table><thead><tr><th>Part</th><th>What it shows</th></tr></thead><tbody>' +
     '<tr><td><b>The Banner</b></td><td>What needs you, polls out, and meetings booked this week. The ring shows how many of the last 30 days’ requests are booked.</td></tr>' +
@@ -3105,7 +3116,7 @@ function viewStats(app) {
   head.appendChild(seg(STAT_RANGES, rk, function (v) { STATE.statRange = v; lsSet('statRange', v); render({ full: true }); }));
   app.appendChild(head);
 
-  var reqs = allReqs().filter(function (r) { return (r.createdAt || 0) >= from; });
+  var reqs = allReqs().filter(function (r) { return (r.createdAt || 0) >= from && !isDuplicate(r); });
   var booked = reqs.filter(function (r) { return r.status === 'booked'; });
   var unsch = reqs.filter(couldntSchedule);
   var cancelled = reqs.filter(function (r) { return r.status === 'cancelled' && !couldntSchedule(r); });
