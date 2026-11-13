@@ -897,10 +897,10 @@ function isPast(r) { var s = bookedSlot(r); return !!(s && s.e <= Date.now()); }
    off the Scheduler's hands so it emails nobody about it. */
 function markOutside(req) {
   req = getReq(req.id) || req;
-  var D = dialog('Scheduled Outside the Scheduler'), now = Date.now(), dur = (+req.duration || 30) * 60000;
+  var D = dialog('Scheduled Outside the System'), now = Date.now(), dur = (+req.duration || 30) * 60000;
   var R = req.robot || {}, guess = R.proposed || (req.slots || []).filter(function (x) { return x.s > now; }).sort(function (a, b) { return a.s - b.s; })[0] || null;
   var gp = guess ? parts(guess.s, ET) : null;
-  D.body.appendChild(el('p', 'small muted', 'For a meeting someone set up themselves, such as their own Outlook invitation. It moves to Scheduled (and later Past Meetings) and counts in Statistics. The Scheduler stops emailing about it and sends no invitation.'));
+  D.body.appendChild(el('p', 'small muted', 'For a meeting someone set up themselves, such as their own Outlook invitation. It moves to Scheduled Outside the System on the Dashboard and counts in Statistics as scheduled. The Scheduler stops emailing about it and sends no invitation.'));
   var row = el('div', 'grow-row');
   var di = el('input'); di.type = 'date'; di.value = gp ? gp.iso : todayISO(ET); di.style.width = 'auto'; di.setAttribute('aria-label', 'Day of the meeting');
   var ti = el('input'); ti.type = 'time'; ti.step = 300; ti.value = gp ? String(gp.h).padStart(2, '0') + ':' + String(gp.mi).padStart(2, '0') : '10:00'; ti.style.width = 'auto'; ti.setAttribute('aria-label', 'Start time, Eastern');
@@ -919,8 +919,8 @@ function markOutside(req) {
     r.status = 'booked'; r.chosen = id; r.bookedAt = Date.now(); delete r.closed; delete r.closedAt; delete r.closedBy;
     r.bookedOutside = { by: me().name, at: Date.now(), who: who };
     if (r.robot && r.robot.auto) r.robotEdit = { auto: false, stage: 'booked' };
-    put(r, 'Scheduled outside the Scheduler for ' + slotLabel({ s: s0, e: s0 + dur }, ET, true) + (who ? ' (' + who + ' sent the invitation)' : ''));
-    D.close(); toast('Marked as scheduled. It’s under Scheduled on the Dashboard.');
+    put(r, 'Scheduled outside the system for ' + slotLabel({ s: s0, e: s0 + dur }, ET, true) + (who ? ' (' + who + ' sent the invitation)' : ''));
+    D.close(); toast('Marked as scheduled. It’s under Scheduled Outside the System on the Dashboard.');
   }, 'check'));
 }
 function closeUnscheduled(req) {
@@ -1299,14 +1299,15 @@ function viewList(app) {
   app.appendChild(st);
   var f = el('div', 'filters');
   f.appendChild(seg([[false, 'Everyone’s'], [true, 'Mine']], STATE.listMine, function (v) { STATE.listMine = v; lsSet('listMine', v); render(); }));
-  f.appendChild(seg([['active', 'In Progress'], ['look', 'Needs a Look'], ['booked', 'Scheduled'], ['past', 'Past'], ['unscheduled', 'Couldn’t Schedule'], ['all', 'All']], STATE.listShow, function (v) { STATE.listShow = v; lsSet('listShow', v); render(); }));
+  f.appendChild(seg([['active', 'In Progress'], ['look', 'Needs a Look'], ['booked', 'Scheduled'], ['outside', 'Scheduled Outside'], ['past', 'Past'], ['unscheduled', 'Couldn’t Schedule'], ['all', 'All']], STATE.listShow, function (v) { STATE.listShow = v; lsSet('listShow', v); render(); }));
   app.appendChild(f);
   var m = me().email;
   var list = allReqs().filter(function (r) {
     if (STATE.listMine && String(r.owner || '').toLowerCase() !== m) return false;
     var ph = phase(r);
     if (STATE.listShow === 'active') return ph !== 'booked' && ph !== 'cancelled';
-    if (STATE.listShow === 'booked') return ph === 'booked' && !isPast(r);
+    if (STATE.listShow === 'booked') return ph === 'booked' && !isPast(r) && !r.bookedOutside;
+    if (STATE.listShow === 'outside') return r.status === 'booked' && !!r.bookedOutside;
     if (STATE.listShow === 'past') return isPast(r);
     if (STATE.listShow === 'unscheduled') return couldntSchedule(r);
     if (STATE.listShow === 'look') return needsYou(r);
@@ -1314,13 +1315,13 @@ function viewList(app) {
   }).sort(function (a, b) {
     var sa = bookedSlot(a), sb = bookedSlot(b);
     if (STATE.listShow === 'booked' && sa && sb) return sa.s - sb.s;
-    if (STATE.listShow === 'past' && sa && sb) return sb.s - sa.s;
+    if ((STATE.listShow === 'past' || STATE.listShow === 'outside') && sa && sb) return sb.s - sa.s;
     if (STATE.listShow === 'unscheduled') return (b.closedAt || b.updatedAt || 0) - (a.closedAt || a.updatedAt || 0);
     return (b.updatedAt || 0) - (a.updatedAt || 0);
   });
   if (!list.length) {
     /* no empty well: say what happens next instead */
-    var none = { look: 'Nothing needs a look right now.', booked: 'Nothing scheduled ahead.', past: 'No past meetings yet.', unscheduled: 'Nothing closed as Couldn’t Schedule.', all: 'No requests yet.', active: 'Nothing in progress right now.' }[STATE.listShow] || '';
+    var none = { look: 'Nothing needs a look right now.', booked: 'Nothing scheduled ahead.', past: 'No past meetings yet.', unscheduled: 'Nothing closed as Couldn’t Schedule.', outside: 'Nothing marked Scheduled Outside the System yet.', all: 'No requests yet.', active: 'Nothing in progress right now.' }[STATE.listShow] || '';
     app.appendChild(el('p', 'muted', esc(none) + ' When an email reaches scheduling@mismo.org, the Scheduler takes it from there:'));
     app.appendChild(howItRuns());
     return;
@@ -1544,7 +1545,7 @@ function viewDetail(app, req) {
     var bk = el('div', 'booked');
     bk.innerHTML = '<div style="flex:1 1 280px"><div class="small muted">Booked for</div><div class="when">' + esc(sl ? slotLabel(sl, VIEW_TZ, true) : 'a time no longer listed') + '</div>' + (sl && VIEW_TZ !== ET ? '<div class="small muted">' + esc(slotLabel(sl, ET, true)) + '</div>' : '') + '</div>';
     var ba = el('div', 'grow-row'), inv = (req.robot && req.robot.invite) || null, zm = inv && inv.zoom;
-    if (req.bookedOutside) $('div', bk).appendChild(el('div', 'small', '<b>Scheduled outside the Scheduler</b>' + (req.bookedOutside.who ? ': ' + esc(req.bookedOutside.who) + ' sent the invitation' : '') + '. Marked by ' + esc(req.bookedOutside.by || 'staff') + ' ' + esc(whenAgo(req.bookedOutside.at || Date.now())) + '. The Scheduler doesn’t email anyone about it.')).style.marginTop = '8px';
+    if (req.bookedOutside) $('div', bk).appendChild(el('div', 'small', '<b>Scheduled outside the system</b>' + (req.bookedOutside.who ? ': ' + esc(req.bookedOutside.who) + ' sent the invitation' : '') + '. Marked by ' + esc(req.bookedOutside.by || 'staff') + ' ' + esc(whenAgo(req.bookedOutside.at || Date.now())) + '. The Scheduler doesn’t email anyone about it.')).style.marginTop = '8px';
     if (inv) {
       var it = inv.state === 'sent' ? '<b>Calendar invite sent</b> from scheduling@mismo.org' + (inv.at ? ' ' + esc(whenAgo(inv.at)) : '') + '.'
         : inv.state === 'failed' ? '<b>The invite couldn’t be sent automatically</b> (' + esc(String(inv.lastErr || '').slice(0, 120)) + '). Send it with the button.'
@@ -1574,7 +1575,7 @@ function viewDetail(app, req) {
     }
     bk.appendChild(ba); app.appendChild(bk);
   }
-  if (req.status === 'cancelled') app.appendChild(el('div', 'notice warn', (couldntSchedule(req) ? '<b>We couldn’t find a time for this one.</b> Closed' + (req.closedBy ? ' by ' + esc(first(req.closedBy)) : '') + (req.closedAt ? ' ' + esc(fmtDay(req.closedAt, VIEW_TZ)) : '') + '. ' : isDuplicate(req) ? '<b>Closed as a duplicate</b> of another request for the same meeting. It isn’t counted in Statistics. ' : '<b>This request was cancelled.</b> ') + (canEdit() && !isArchived(req) && couldntSchedule(req) ? '<button class="linkbtn" type="button" id="outside">It Was Scheduled Outside the Scheduler</button> · <button class="linkbtn" type="button" id="dupe">It’s a Duplicate</button> · ' : '') + (canEdit() ? '<button class="linkbtn" type="button" id="reopen">Bring it back</button>' : '')));
+  if (req.status === 'cancelled') app.appendChild(el('div', 'notice warn', (couldntSchedule(req) ? '<b>We couldn’t find a time for this one.</b> Closed' + (req.closedBy ? ' by ' + esc(first(req.closedBy)) : '') + (req.closedAt ? ' ' + esc(fmtDay(req.closedAt, VIEW_TZ)) : '') + '. ' : isDuplicate(req) ? '<b>Closed as a duplicate</b> of another request for the same meeting. It isn’t counted in Statistics. ' : '<b>This request was cancelled.</b> ') + (canEdit() && !isArchived(req) && couldntSchedule(req) ? '<button class="linkbtn" type="button" id="outside">It Was Scheduled Outside the System</button> · <button class="linkbtn" type="button" id="dupe">It’s a Duplicate</button> · ' : '') + (canEdit() ? '<button class="linkbtn" type="button" id="reopen">Bring it back</button>' : '')));
   if (req.status === 'cancelled' && req.robot && req.robot.cancelInvite) { var ci = req.robot.cancelInvite; app.appendChild(el('div', 'notice', ci.state === 'done' ? '<b>Meeting cancelled.</b> Everyone was sent Outlook’s cancellation from scheduling@mismo.org.' : ci.state === 'failed' ? '<b>The Outlook invitation couldn’t be cancelled automatically</b> (' + esc(String(ci.lastErr || '').slice(0, 120)) + '). Please cancel it in the scheduling@mismo.org calendar.' : '<b>Cancelling the Outlook invitation…</b> Everyone gets the cancellation within a few minutes.')); }
   if (req.robot) app.appendChild(robotPanel(req, editable));
   if ($('#outside')) $('#outside').onclick = function () { markOutside(req); };
@@ -1671,7 +1672,7 @@ function viewDetail(app, req) {
   if (editable && req.status !== 'booked') {
     var cx = btn('Cancel this request', 'danger sm', function () { if (confirm('Cancel “' + req.title + '”? Its Team HQ reminder will be ticked off. You can bring it back later.')) { var r = clone(req); r.status = 'cancelled'; delete r.closed; r.closedAt = Date.now(); r.closedBy = me().name; put(r, 'Cancelled'); } });
     cx.style.marginTop = '14px';
-    if (req.status !== 'cancelled') { var so0 = btn('Scheduled Outside the Scheduler', 'ghost sm', function () { markOutside(req); }, 'cal'); so0.style.marginTop = '14px'; so0.style.marginRight = '8px'; lb.appendChild(so0); }
+    if (req.status !== 'cancelled') { var so0 = btn('Scheduled Outside the System', 'ghost sm', function () { markOutside(req); }, 'cal'); so0.style.marginTop = '14px'; so0.style.marginRight = '8px'; lb.appendChild(so0); }
     if (req.status !== 'cancelled') { var cu0 = btn('Close as Couldn’t Schedule', 'ghost sm', function () { closeUnscheduled(req); }); cu0.style.marginTop = '14px'; cu0.style.marginRight = '8px'; lb.appendChild(cu0); }
     if (req.status !== 'cancelled') { var du0 = btn('Close as Duplicate', 'ghost sm', function () { closeDuplicate(req); }); du0.style.marginTop = '14px'; du0.style.marginRight = '8px'; lb.appendChild(du0); }
     lb.appendChild(cx);
@@ -1713,7 +1714,7 @@ function robotPanel(req, editable) {
     if (editable) { var dcb = el('button', 'linkbtn', 'Send New Times'); dcb.type = 'button'; dcb.onclick = function () { sendNewTimes(req); }; dc.appendChild(dcb); }
     b.appendChild(dc);
   }
-  if (look) { var lk = el('div', 'notice bad', '<b>The Scheduler stopped because ' + esc(R.why || 'it needs a person') + '.</b> Fix what’s needed (for example <b>Edit details</b> to add who should attend), then hand it back, or take it from here yourself. If someone set it up themselves, mark it Scheduled Outside the Scheduler; if there’s no time that works, close it as Couldn’t Schedule. '); if (editable) { var lko = el('button', 'linkbtn', 'Scheduled Outside the Scheduler'); lko.type = 'button'; lko.onclick = function () { markOutside(req); }; lk.appendChild(lko); lk.appendChild(document.createTextNode(' · ')); var lkb = el('button', 'linkbtn', 'Close as Couldn’t Schedule'); lkb.type = 'button'; lkb.onclick = function () { closeUnscheduled(req); }; lk.appendChild(lkb); } b.appendChild(lk); }
+  if (look) { var lk = el('div', 'notice bad', '<b>The Scheduler stopped because ' + esc(R.why || 'it needs a person') + '.</b> Fix what’s needed (for example <b>Edit details</b> to add who should attend), then hand it back, or take it from here yourself. If someone set it up themselves, mark it Scheduled Outside the System; if there’s no time that works, close it as Couldn’t Schedule. '); if (editable) { var lko = el('button', 'linkbtn', 'Scheduled Outside the System'); lko.type = 'button'; lko.onclick = function () { markOutside(req); }; lk.appendChild(lko); lk.appendChild(document.createTextNode(' · ')); var lkb = el('button', 'linkbtn', 'Close as Couldn’t Schedule'); lkb.type = 'button'; lkb.onclick = function () { closeUnscheduled(req); }; lk.appendChild(lkb); } b.appendChild(lk); }
   if (R.replyAt) b.appendChild(el('div', 'notice', '<b>' + esc(R.replyFrom || 'Someone') + ' replied by email ' + esc(whenAgo(R.replyAt)) + ':</b> “' + esc(tidyText(R.replySnippet || '')) + '”'));
   var rq = R.requester || {};
   var offered = (R.offered || []).map(function (w) { return fmtDay(w.s, VIEW_TZ) + ' ' + fmtTime(w.s, VIEW_TZ) + '–' + fmtTime(w.e, VIEW_TZ); });
@@ -2720,7 +2721,7 @@ function viewDash(app) {
   var polls = open.filter(function (r) { var ph = phase(r); return ph === 'collecting' || ph === 'ready'; });
   var booked = all.filter(function (r) { return r.status === 'booked'; });
   var bookedWeek = booked.filter(function (r) { return (r.bookedAt || 0) > weekAgo; });
-  var coming = booked.map(function (r) { return { r: r, sl: slotById(r, r.chosen) }; }).filter(function (x) { return x.sl && x.sl.e > now; }).sort(function (a, b) { return a.sl.s - b.sl.s; });
+  var coming = booked.filter(function (r) { return !r.bookedOutside; }).map(function (r) { return { r: r, sl: slotById(r, r.chosen) }; }).filter(function (x) { return x.sl && x.sl.e > now; }).sort(function (a, b) { return a.sl.s - b.sl.s; });
   var inbox = inboxItems().filter(function (x) { return !isHealthMail(x); }), inWeek = inbox.filter(function (x) { return (x.receivedAt || 0) > weekAgo; });
   var guestsWaiting = 0, guestsIn = 0;
   polls.forEach(function (r) { (r.guests || []).forEach(function (g) { if (g.answer) guestsIn++; else if (g.sentAt) guestsWaiting++; }); });
@@ -2811,8 +2812,8 @@ function viewDash(app) {
   due.forEach(function (x) {
     nd.rows.appendChild(dashRow({ k: '#74bfeb', nm: 'Follow up with ' + (x.g.name || x.g.email), small: x.r.title, wh: 'asked ' + fmtDay(Math.max(x.g.sentAt || 0, (x.g.followUps || []).slice(-1)[0] || 0), VIEW_TZ), age: 'Due ' + dayWord(x.due), ageCls: 'sky', go: function () { go(null, x.r.id); } }));
   });
-  if (!needN) nd.p.appendChild(allClear('You’re all caught up', 'Nothing to approve or look at. Times the Scheduler finds land here for you or Vanessa to approve.'));
-  L.appendChild(nd.p);
+  /* only when something is waiting: the four sections below are the Dashboard's own */
+  if (needN) L.appendChild(nd.p);
 
   /* ---- Polls Out ---- */
   var pl = dashPanel('Polls Out', polls.length ? 'newest first' : '', 'All Requests', function () { STATE.listShow = 'active'; go('list'); });
@@ -2835,15 +2836,17 @@ function viewDash(app) {
   if (!coming.length) cu.p.appendChild(el('div', 'empty', 'Nothing on the calendar ahead. Once a time is approved, the meeting shows here until it happens.'));
   L.appendChild(cu.p);
 
-  /* ---- Past Meetings: booked and already happened ---- */
-  var pastM = booked.map(function (r) { return { r: r, sl: slotById(r, r.chosen) }; }).filter(function (x) { return x.sl && x.sl.e <= now; }).sort(function (a, b) { return b.sl.s - a.sl.s; });
-  var pm = dashPanel('Past Meetings', pastM.length ? pastM.length + ' so far' : '', pastM.length > 5 ? 'All Past' : '', function () { STATE.listShow = 'past'; lsSet('listShow', 'past'); go('list'); });
-  pastM.slice(0, 5).forEach(function (x) {
-    var r = x.r;
-    pm.rows.appendChild(dashRow({ k: '#9fb3c8', nm: r.title || 'Meeting', small: whoOf(r), wh: fmtTime(x.sl.s, VIEW_TZ) + ' ' + tzAbbr(x.sl.s, VIEW_TZ) + ' · ' + (r.where || 'Zoom'), age: fmtDay(x.sl.s, VIEW_TZ), go: function () { go(null, r.id); } }));
+  /* ---- Scheduled Outside the System: set up by someone themselves (their own Outlook invitation) ---- */
+  var outs = booked.filter(function (r) { return r.bookedOutside; }).map(function (r) { return { r: r, sl: slotById(r, r.chosen) }; }).filter(function (x) { return x.sl; })
+    .sort(function (a, b) { var fa = a.sl.e > now, fb = b.sl.e > now; return fa !== fb ? (fa ? -1 : 1) : fa ? a.sl.s - b.sl.s : b.sl.s - a.sl.s; });
+  var so = dashPanel('Scheduled Outside the System', outs.length ? plural(outs.length, 'meeting', 'meetings') : '', outs.length > 4 ? 'All' : '', function () { STATE.listShow = 'outside'; lsSet('listShow', 'outside'); go('list'); });
+  outs.slice(0, 4).forEach(function (x) {
+    var r = x.r, ahead = x.sl.e > now, by = r.bookedOutside.who ? first(r.bookedOutside.who) + ' sent the invitation' : 'Marked by ' + (first(r.bookedOutside.by || '') || 'staff');
+    so.rows.appendChild(dashRow({ k: '#a78bfa', nm: r.title || 'Meeting', small: whoOf(r), wh: fmtTime(x.sl.s, VIEW_TZ) + ' ' + tzAbbr(x.sl.s, VIEW_TZ) + ' · ' + by,
+      age: ahead ? dayWord(parts(x.sl.s, VIEW_TZ).iso).replace(/^./, function (c) { return c.toUpperCase(); }) : fmtDay(x.sl.s, VIEW_TZ), ageCls: ahead && x.sl.s < now + 7 * 864e5 ? 'ok' : '', go: function () { go(null, r.id); } }));
   });
-  if (!pastM.length) pm.p.appendChild(el('div', 'empty', 'Meetings move here once they’ve happened, so you can look back at what was scheduled.'));
-  L.appendChild(pm.p);
+  if (!outs.length) so.p.appendChild(el('div', 'empty', 'Meetings someone set up themselves land here when a request is marked Scheduled Outside the System, so they still count as scheduled.'));
+  L.appendChild(so.p);
 
   /* ---- Team This Week ---- */
   var tw = dashPanel('Team This Week', 'free time, 9–5 Eastern', 'Calendar', function () { go('cal'); });
@@ -2945,17 +2948,17 @@ var HELP = [
     '<tr><td>Go ahead without someone</td><td>Under Outside guests, press <b>Make optional</b> next to them.</td><td>Times only have to work for the others. If one already does, it’s held for your approval. They’re still invited, as optional.</td></tr>' +
     '<tr><td>Try a fresh set of times</td><td>Press <b>Send New Times</b> (on the Needs You row or on the request).</td><td>New times go on the poll and everyone who answered gets a New Times email.</td></tr>' +
     '<tr><td>Change the length</td><td>Press <b>Edit details</b> and change it (for example to an hour).</td><td>A fresh set of times at the new length goes out.</td></tr>' +
-    '<tr><td>Someone set it up themselves</td><td>Press <b>Scheduled Outside the Scheduler</b> and enter the day and time.</td><td>It moves to Scheduled (and Past Meetings), counts in Statistics, and the Scheduler emails no one about it.</td></tr><tr><td>The same meeting has two requests</td><td>Press <b>Close as Duplicate</b> on the extra one (or <b>It’s a Duplicate</b> if it was already closed).</td><td>It’s left out of Statistics, so the meeting counts once.</td></tr><tr><td>Give up</td><td>Press <b>Close as Couldn’t Schedule</b>.</td><td>It moves to Couldn’t Schedule on the Dashboard for reference.</td></tr></tbody></table>'; } },
+    '<tr><td>Someone set it up themselves</td><td>Press <b>Scheduled Outside the System</b> and enter the day and time.</td><td>It moves to Scheduled Outside the System on the Dashboard, counts in Statistics as scheduled, and the Scheduler emails no one about it.</td></tr><tr><td>The same meeting has two requests</td><td>Press <b>Close as Duplicate</b> on the extra one (or <b>It’s a Duplicate</b> if it was already closed).</td><td>It’s left out of Statistics, so the meeting counts once.</td></tr><tr><td>Give up</td><td>Press <b>Close as Couldn’t Schedule</b>.</td><td>It moves to Couldn’t Schedule on the Dashboard for reference.</td></tr></tbody></table>'; } },
   { id: 'dash', k: '#f0b94a', t: 'The Dashboard', h: function () { return '<h2>Reading the Dashboard</h2><p class="lead">Everything is on one page. Click any row to open it in the panel on the right; press × or Escape to close it.</p>' +
     '<table><thead><tr><th>Part</th><th>What it shows</th></tr></thead><tbody>' +
     '<tr><td><b>The Banner</b></td><td>What needs you, polls out, and meetings booked this week. The ring shows how many of the last 30 days’ requests are booked.</td></tr>' +
-    '<tr><td><b>Needs You</b></td><td>Times to approve, polls where no time works (your call), polls whose three follow-ups went unanswered, requests the Scheduler stopped on, and people to follow up with on requests run by hand.</td></tr>' +
+    '<tr><td><b>Needs You</b></td><td>Shows at the top only when something is waiting: times to approve, polls where no time works (your call), polls whose three follow-ups went unanswered, requests the Scheduler stopped on, and people to follow up with on requests run by hand.</td></tr>' +
     '<tr><td><b>Polls Out</b></td><td>Every poll waiting on guests: who has answered, how many times are on offer, and which follow-up they’re on.</td></tr>' +
     '<tr><td><b>Booked This Week</b></td><td>Meetings booked in the last seven days, automatic and by hand.</td></tr>' +
     '<tr><td><b>Emails This Week</b></td><td>Everything that reached scheduling@mismo.org, and how many became requests.</td></tr>' +
-    '<tr><td><b>Scheduled</b></td><td>Every booked meeting still ahead, soonest first. This week’s are marked green.</td></tr>' +
-    '<tr><td><b>Past Meetings</b></td><td>Meetings we scheduled that have already happened, newest first, for reference.</td></tr>' +
-    '<tr><td><b>Couldn’t Schedule</b></td><td>Requests we tried and closed without a time, with the reason. Open one and press Bring it back to try again, or It Was Scheduled Outside the Scheduler if someone set it up themselves.</td></tr>' +
+    '<tr><td><b>Scheduled</b></td><td>Every meeting booked through the Scheduler that’s still ahead, soonest first. This week’s are marked green. Past ones are under All Requests, Past.</td></tr>' +
+    '<tr><td><b>Scheduled Outside the System</b></td><td>Meetings someone set up themselves (their own Outlook invitation), marked so they still count. Upcoming first. Past meetings are under All Requests, Past.</td></tr>' +
+    '<tr><td><b>Couldn’t Schedule</b></td><td>Requests we tried and closed without a time, with the reason. Open one and press Bring it back to try again, or It Was Scheduled Outside the System if someone set it up themselves.</td></tr>' +
     '<tr><td><b>Team This Week</b></td><td>How much of each person’s day is free from 9 to 5 Eastern, from Outlook. Open Calendar for the half-hour view.</td></tr>' +
     '<tr><td><b>Incoming Email</b></td><td>The latest emails and what the Scheduler did with each one.</td></tr>' +
     '<tr><td><b>Latest Activity</b></td><td>Everything the Scheduler and the team did, newest first.</td></tr></tbody></table>' +
@@ -3029,7 +3032,7 @@ var HELP = [
     ['Does the Scheduler send the calendar invite?', 'Yes. Once a time is approved, the Outlook invitation goes out from scheduling@mismo.org with the Zoom room link, and the meeting sits on the scheduling@mismo.org calendar. If it can’t, Vanessa gets a button to send it from Outlook.'],
     ['Which Zoom link do meetings use?', 'The MISMO Zoom room: info@mismo.org’s Personal Meeting Room, mba-org.zoom.us/j/2825175426. Guests can join without anyone hosting.'],
     ['How do I move or cancel a booked meeting?', 'Open the request and press <b>Move Meeting</b> (pick a day and time; it shows who from MISMO is free) or <b>Cancel Meeting</b>. The Scheduler cancels the old Outlook invitation and sends a new one, or sends everyone Outlook’s cancellation. Guests can also reply to their invitation with a time that suits them: if everyone from MISMO is free then, the move waits for Vanessa or Jonna to approve. Meetings booked before November 7 can be moved too, but their old invitation has to be deleted in Outlook by hand.'],
-    ['Where do old requests go?', 'A month after the meeting (or a month after a request was closed without one), the Scheduler moves it to a monthly archive so the working file stays small. Archived requests still show in Past Meetings, Couldn’t Schedule, Statistics and search, marked Archived and read-only. Emails in the scheduling inbox are trimmed to the newest message after two weeks and cleared after 120 days; the request keeps its own copy of what was asked.'],
+    ['Where do old requests go?', 'A month after the meeting (or a month after a request was closed without one), the Scheduler moves it to a monthly archive so the working file stays small. Archived requests still show in All Requests (Past), Couldn’t Schedule, Statistics and search, marked Archived and read-only. Emails in the scheduling inbox are trimmed to the newest message after two weeks and cleared after 120 days; the request keeps its own copy of what was asked.'],
     ['What if a guest emails their times instead of using the link?', 'The Scheduler reads the reply. Times on the poll count as their answer; a new time they suggest is held for approval (or added to the poll when there are other guests) if everyone from MISMO is free. Vanessa gets a Reply About email saying what it did. Vague replies change nothing.'],
     ['What if someone from MISMO is out of office?', 'If they’re out for all the days asked for, the Scheduler doesn’t wait for them. It goes ahead with the others from MISMO and sends them the invitation as optional. The request shows them under Optional from MISMO. It never drops the person who asked, or the only person from MISMO on the meeting. If they’re out for only part of the time, it simply offers the days they’re back.'],
     ['Can a meeting be an hour?', 'Yes. If the email asks for an hour, the Scheduler offers hour-long times. To change a request already under way, press Edit details and change the length; fresh times at the new length go out.'],
