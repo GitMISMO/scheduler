@@ -874,6 +874,37 @@ var PHASE = {
 function couldntSchedule(r) { return !!(r && r.status === 'cancelled' && r.closed === 'unscheduled'); }
 function bookedSlot(r) { return r && r.status === 'booked' ? slotById(r, r.chosen) : null; }
 function isPast(r) { var s = bookedSlot(r); return !!(s && s.e <= Date.now()); }
+/* Someone set the meeting up themselves (for example Amy sent her own Outlook invitation): record
+   when it is, so it shows under Scheduled and Past Meetings and counts in Statistics, and take it
+   off the Scheduler's hands so it emails nobody about it. */
+function markOutside(req) {
+  req = getReq(req.id) || req;
+  var D = dialog('Scheduled Outside the Scheduler'), now = Date.now(), dur = (+req.duration || 30) * 60000;
+  var R = req.robot || {}, guess = R.proposed || (req.slots || []).filter(function (x) { return x.s > now; }).sort(function (a, b) { return a.s - b.s; })[0] || null;
+  var gp = guess ? parts(guess.s, ET) : null;
+  D.body.appendChild(el('p', 'small muted', 'For a meeting someone set up themselves, such as their own Outlook invitation. It moves to Scheduled (and later Past Meetings) and counts in Statistics. The Scheduler stops emailing about it and sends no invitation.'));
+  var row = el('div', 'grow-row');
+  var di = el('input'); di.type = 'date'; di.value = gp ? gp.iso : todayISO(ET); di.style.width = 'auto'; di.setAttribute('aria-label', 'Day of the meeting');
+  var ti = el('input'); ti.type = 'time'; ti.step = 300; ti.value = gp ? String(gp.h).padStart(2, '0') + ':' + String(gp.mi).padStart(2, '0') : '10:00'; ti.style.width = 'auto'; ti.setAttribute('aria-label', 'Start time, Eastern');
+  row.appendChild(di); row.appendChild(ti); row.appendChild(el('span', 'small muted', 'Eastern · ' + (+req.duration || 30) + ' minutes'));
+  D.body.appendChild(row);
+  var wl = el('label', 'f'); wl.style.marginTop = '12px'; wl.innerHTML = '<span>Who sent the invitation <span class="hint">(optional)</span></span><input type="text" placeholder="e.g. Amy Moses">';
+  D.body.appendChild(wl);
+  var say = el('p', 'small'); D.body.appendChild(say);
+  D.foot.appendChild(btn('Cancel', 'ghost', function () { D.close(); }));
+  D.foot.appendChild(btn('Mark as Scheduled', '', function () {
+    var dv = di.value, tv = ti.value, m = /^(\d{1,2}):(\d{2})$/.exec(tv || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dv) || !m) { say.innerHTML = '<span style="color:var(--bad)">Pick the day and start time.</span>'; return; }
+    var s0 = at(dv, (+m[1]) * 60 + (+m[2]), ET), who = $('input', wl).value.trim();
+    var r = clone(getReq(req.id)), id = 'out' + rid(4);
+    r.slots = (r.slots || []).concat({ id: id, s: s0, e: s0 + dur, outside: true, added: Date.now() });
+    r.status = 'booked'; r.chosen = id; r.bookedAt = Date.now(); delete r.closed;
+    r.bookedOutside = { by: me().name, at: Date.now(), who: who };
+    if (r.robot && r.robot.auto) r.robotEdit = { auto: false, stage: 'booked' };
+    put(r, 'Scheduled outside the Scheduler for ' + slotLabel({ s: s0, e: s0 + dur }, ET, true) + (who ? ' (' + who + ' sent the invitation)' : ''));
+    D.close(); toast('Marked as scheduled. It’s under Scheduled on the Dashboard.');
+  }, 'check'));
+}
 function closeUnscheduled(req) {
   if (!confirm('Close “' + (req.title || 'this request') + '” as Couldn’t Schedule? The Scheduler stops emailing about it, and it stays on the Dashboard for reference. You can bring it back later.')) return;
   var r = clone(req); r.status = 'cancelled'; r.closed = 'unscheduled'; r.closedAt = Date.now(); r.closedBy = me().name;
@@ -1495,6 +1526,7 @@ function viewDetail(app, req) {
     var bk = el('div', 'booked');
     bk.innerHTML = '<div style="flex:1 1 280px"><div class="small muted">Booked for</div><div class="when">' + esc(sl ? slotLabel(sl, VIEW_TZ, true) : 'a time no longer listed') + '</div>' + (sl && VIEW_TZ !== ET ? '<div class="small muted">' + esc(slotLabel(sl, ET, true)) + '</div>' : '') + '</div>';
     var ba = el('div', 'grow-row'), inv = (req.robot && req.robot.invite) || null, zm = inv && inv.zoom;
+    if (req.bookedOutside) $('div', bk).appendChild(el('div', 'small', '<b>Scheduled outside the Scheduler</b>' + (req.bookedOutside.who ? ': ' + esc(req.bookedOutside.who) + ' sent the invitation' : '') + '. Marked by ' + esc(req.bookedOutside.by || 'staff') + ' ' + esc(whenAgo(req.bookedOutside.at || Date.now())) + '. The Scheduler doesn’t email anyone about it.')).style.marginTop = '8px';
     if (inv) {
       var it = inv.state === 'sent' ? '<b>Calendar invite sent</b> from scheduling@mismo.org' + (inv.at ? ' ' + esc(whenAgo(inv.at)) : '') + '.'
         : inv.state === 'failed' ? '<b>The invite couldn’t be sent automatically</b> (' + esc(String(inv.lastErr || '').slice(0, 120)) + '). Send it with the button.'
@@ -1502,7 +1534,7 @@ function viewDetail(app, req) {
       if (zm && zm.joinUrl) it += '<br>Zoom: <a href="' + esc(zm.joinUrl) + '" target="_blank" rel="noopener">' + esc(zm.joinUrl.replace(/\?.*$/, '')) + '</a>' + (zm.passcode ? ' · passcode ' + esc(zm.passcode) : '');
       $('div', bk).appendChild(el('div', 'small', it)).style.marginTop = '8px';
     }
-    if (sl && (!inv || inv.state === 'failed')) {
+    if (sl && !req.bookedOutside && (!inv || inv.state === 'failed')) {
       ba.appendChild(btn('Create the invite in Outlook', '', function () { window.open(owaInvite(req, sl), '_blank', 'noopener'); }, 'cal'));
       ba.appendChild(btn('Download invite file', 'ghost', function () { downloadIcs(req, sl); }, 'down'));
     }
@@ -1619,6 +1651,7 @@ function viewDetail(app, req) {
   if (editable && req.status !== 'booked') {
     var cx = btn('Cancel this request', 'danger sm', function () { if (confirm('Cancel “' + req.title + '”? Its Team HQ reminder will be ticked off. You can bring it back later.')) { var r = clone(req); r.status = 'cancelled'; delete r.closed; r.closedAt = Date.now(); r.closedBy = me().name; put(r, 'Cancelled'); } });
     cx.style.marginTop = '14px';
+    if (req.status !== 'cancelled') { var so0 = btn('Scheduled Outside the Scheduler', 'ghost sm', function () { markOutside(req); }, 'cal'); so0.style.marginTop = '14px'; so0.style.marginRight = '8px'; lb.appendChild(so0); }
     if (req.status !== 'cancelled') { var cu0 = btn('Close as Couldn’t Schedule', 'ghost sm', function () { closeUnscheduled(req); }); cu0.style.marginTop = '14px'; cu0.style.marginRight = '8px'; lb.appendChild(cu0); }
     lb.appendChild(cx);
   }
@@ -1659,7 +1692,7 @@ function robotPanel(req, editable) {
     if (editable) { var dcb = el('button', 'linkbtn', 'Send New Times'); dcb.type = 'button'; dcb.onclick = function () { sendNewTimes(req); }; dc.appendChild(dcb); }
     b.appendChild(dc);
   }
-  if (look) { var lk = el('div', 'notice bad', '<b>The Scheduler stopped because ' + esc(R.why || 'it needs a person') + '.</b> Fix what’s needed (for example <b>Edit details</b> to add who should attend), then hand it back, or take it from here yourself. If there’s no time that works, close it as Couldn’t Schedule. '); if (editable) { var lkb = el('button', 'linkbtn', 'Close as Couldn’t Schedule'); lkb.type = 'button'; lkb.onclick = function () { closeUnscheduled(req); }; lk.appendChild(lkb); } b.appendChild(lk); }
+  if (look) { var lk = el('div', 'notice bad', '<b>The Scheduler stopped because ' + esc(R.why || 'it needs a person') + '.</b> Fix what’s needed (for example <b>Edit details</b> to add who should attend), then hand it back, or take it from here yourself. If someone set it up themselves, mark it Scheduled Outside the Scheduler; if there’s no time that works, close it as Couldn’t Schedule. '); if (editable) { var lko = el('button', 'linkbtn', 'Scheduled Outside the Scheduler'); lko.type = 'button'; lko.onclick = function () { markOutside(req); }; lk.appendChild(lko); lk.appendChild(document.createTextNode(' · ')); var lkb = el('button', 'linkbtn', 'Close as Couldn’t Schedule'); lkb.type = 'button'; lkb.onclick = function () { closeUnscheduled(req); }; lk.appendChild(lkb); } b.appendChild(lk); }
   if (R.replyAt) b.appendChild(el('div', 'notice', '<b>' + esc(R.replyFrom || 'Someone') + ' replied by email ' + esc(whenAgo(R.replyAt)) + ':</b> “' + esc(R.replySnippet || '') + '”'));
   var rq = R.requester || {};
   var offered = (R.offered || []).map(function (w) { return fmtDay(w.s, VIEW_TZ) + ' ' + fmtTime(w.s, VIEW_TZ) + '–' + fmtTime(w.e, VIEW_TZ); });
@@ -2891,7 +2924,7 @@ var HELP = [
     '<tr><td>Go ahead without someone</td><td>Under Outside guests, press <b>Make optional</b> next to them.</td><td>Times only have to work for the others. If one already does, it’s held for your approval. They’re still invited, as optional.</td></tr>' +
     '<tr><td>Try a fresh set of times</td><td>Press <b>Send New Times</b> (on the Needs You row or on the request).</td><td>New times go on the poll and everyone who answered gets a New Times email.</td></tr>' +
     '<tr><td>Change the length</td><td>Press <b>Edit details</b> and change it (for example to an hour).</td><td>A fresh set of times at the new length goes out.</td></tr>' +
-    '<tr><td>Give up</td><td>Press <b>Close as Couldn’t Schedule</b>.</td><td>It moves to Couldn’t Schedule on the Dashboard for reference.</td></tr></tbody></table>'; } },
+    '<tr><td>Someone set it up themselves</td><td>Press <b>Scheduled Outside the Scheduler</b> and enter the day and time.</td><td>It moves to Scheduled (and Past Meetings), counts in Statistics, and the Scheduler emails no one about it.</td></tr><tr><td>Give up</td><td>Press <b>Close as Couldn’t Schedule</b>.</td><td>It moves to Couldn’t Schedule on the Dashboard for reference.</td></tr></tbody></table>'; } },
   { id: 'dash', k: '#f0b94a', t: 'The Dashboard', h: function () { return '<h2>Reading the Dashboard</h2><p class="lead">Everything is on one page. Click any row to open it in the panel on the right; press × or Escape to close it.</p>' +
     '<table><thead><tr><th>Part</th><th>What it shows</th></tr></thead><tbody>' +
     '<tr><td><b>The Banner</b></td><td>What needs you, polls out, and meetings booked this week. The ring shows how many of the last 30 days’ requests are booked.</td></tr>' +
