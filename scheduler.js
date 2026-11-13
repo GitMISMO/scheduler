@@ -871,6 +871,15 @@ var PHASE = {
   ready: { n: 'Ready to book', c: 'p-ready' }, booked: { n: 'Booked', c: 'p-booked' }, cancelled: { n: 'Cancelled', c: 'p-cancel' },
   look: { n: 'Needs a Look', c: 'p-due' }, unscheduled: { n: 'Couldn’t Schedule', c: 'p-unsch' }, auto: { n: 'Working on It', c: 'p-collect' }, approve: { n: 'Waiting for Approval', c: 'p-ready' }
 };
+/* text from emails (in the history and Latest Activity): signature images and Safe Links
+   wrappers like [https://nam11.safelinks.protection.outlook.com/?url=…] are noise, not words */
+function tidyText(t) {
+  return String(t == null ? '' : t)
+    .replace(/\[(?:cid:|https?:\/\/)[^\]\s”"]*(?:\]|(?=[”"]?\s*$))/gi, '')
+    .replace(/<https?:\/\/[^>\s]*>/gi, '')
+    .replace(/https?:\/\/[^\s"”)]+/gi, function (u) { return u.length > 60 ? u.replace(/^https?:\/\//, '').split(/[/?#]/)[0] + '…' : u; })
+    .replace(/\s{2,}/g, ' ').replace(/\s+([”"])/g, '$1').trim();
+}
 function couldntSchedule(r) { return !!(r && r.status === 'cancelled' && r.closed === 'unscheduled'); }
 function bookedSlot(r) { return r && r.status === 'booked' ? slotById(r, r.chosen) : null; }
 function isPast(r) { var s = bookedSlot(r); return !!(s && s.e <= Date.now()); }
@@ -898,7 +907,7 @@ function markOutside(req) {
     var s0 = at(dv, (+m[1]) * 60 + (+m[2]), ET), who = $('input', wl).value.trim();
     var r = clone(getReq(req.id)), id = 'out' + rid(4);
     r.slots = (r.slots || []).concat({ id: id, s: s0, e: s0 + dur, outside: true, added: Date.now() });
-    r.status = 'booked'; r.chosen = id; r.bookedAt = Date.now(); delete r.closed;
+    r.status = 'booked'; r.chosen = id; r.bookedAt = Date.now(); delete r.closed; delete r.closedAt; delete r.closedBy;
     r.bookedOutside = { by: me().name, at: Date.now(), who: who };
     if (r.robot && r.robot.auto) r.robotEdit = { auto: false, stage: 'booked' };
     put(r, 'Scheduled outside the Scheduler for ' + slotLabel({ s: s0, e: s0 + dur }, ET, true) + (who ? ' (' + who + ' sent the invitation)' : ''));
@@ -1556,9 +1565,10 @@ function viewDetail(app, req) {
     }
     bk.appendChild(ba); app.appendChild(bk);
   }
-  if (req.status === 'cancelled') app.appendChild(el('div', 'notice warn', (couldntSchedule(req) ? '<b>We couldn’t find a time for this one.</b> Closed' + (req.closedBy ? ' by ' + esc(first(req.closedBy)) : '') + (req.closedAt ? ' ' + esc(fmtDay(req.closedAt, VIEW_TZ)) : '') + '. ' : '<b>This request was cancelled.</b> ') + (canEdit() ? '<button class="linkbtn" type="button" id="reopen">Bring it back</button>' : '')));
+  if (req.status === 'cancelled') app.appendChild(el('div', 'notice warn', (couldntSchedule(req) ? '<b>We couldn’t find a time for this one.</b> Closed' + (req.closedBy ? ' by ' + esc(first(req.closedBy)) : '') + (req.closedAt ? ' ' + esc(fmtDay(req.closedAt, VIEW_TZ)) : '') + '. ' : '<b>This request was cancelled.</b> ') + (canEdit() && !isArchived(req) && couldntSchedule(req) ? '<button class="linkbtn" type="button" id="outside">It Was Scheduled Outside the Scheduler</button> · ' : '') + (canEdit() ? '<button class="linkbtn" type="button" id="reopen">Bring it back</button>' : '')));
   if (req.status === 'cancelled' && req.robot && req.robot.cancelInvite) { var ci = req.robot.cancelInvite; app.appendChild(el('div', 'notice', ci.state === 'done' ? '<b>Meeting cancelled.</b> Everyone was sent Outlook’s cancellation from scheduling@mismo.org.' : ci.state === 'failed' ? '<b>The Outlook invitation couldn’t be cancelled automatically</b> (' + esc(String(ci.lastErr || '').slice(0, 120)) + '). Please cancel it in the scheduling@mismo.org calendar.' : '<b>Cancelling the Outlook invitation…</b> Everyone gets the cancellation within a few minutes.')); }
   if (req.robot) app.appendChild(robotPanel(req, editable));
+  if ($('#outside')) $('#outside').onclick = function () { markOutside(req); };
   if ($('#reopen')) $('#reopen').onclick = function () { var r = clone(req); r.status = ''; delete r.closed; delete r.closedAt; delete r.closedBy; put(r, 'Brought back'); };
 
   /* times + who can make it */
@@ -1646,7 +1656,7 @@ function viewDetail(app, req) {
   var lb = el('div', 'panel-b'); pL.appendChild(lb);
   if (req.source) { lb.appendChild(el('div', 'small muted', 'The email that started it')); var pre = el('pre', 'src'); pre.textContent = req.source; lb.appendChild(pre); }
   var ul = el('ul', 'log');
-  (req.log || []).slice().reverse().forEach(function (x) { ul.appendChild(el('li', null, '<span>' + esc(fmtDay(x.at, VIEW_TZ) + ' ' + fmtTime(x.at, VIEW_TZ)) + '</span><span>' + esc(x.what) + ' — ' + esc(first(x.by)) + '</span>')); });
+  (req.log || []).slice().reverse().forEach(function (x) { ul.appendChild(el('li', null, '<span>' + esc(fmtDay(x.at, VIEW_TZ) + ' ' + fmtTime(x.at, VIEW_TZ)) + '</span><span>' + esc(tidyText(x.what)) + ' — ' + esc(first(x.by)) + '</span>')); });
   if ((req.log || []).length) { lb.appendChild(el('div', 'small muted', 'History')); lb.appendChild(ul); }
   if (editable && req.status !== 'booked') {
     var cx = btn('Cancel this request', 'danger sm', function () { if (confirm('Cancel “' + req.title + '”? Its Team HQ reminder will be ticked off. You can bring it back later.')) { var r = clone(req); r.status = 'cancelled'; delete r.closed; r.closedAt = Date.now(); r.closedBy = me().name; put(r, 'Cancelled'); } });
@@ -2870,7 +2880,7 @@ function viewDash(app) {
   var events = [];
   all.forEach(function (r) { (r.log || []).forEach(function (e) { events.push({ r: r, e: e }); }); });
   events.sort(function (a, b) { return (b.e.at || 0) - (a.e.at || 0); }).slice(0, 14).forEach(function (x) {
-    var f = el('div', 'fi'); f.innerHTML = '<span>' + esc(shortAgo(x.e.at || now)) + '</span><div><b>' + esc(x.r.title || 'Meeting request') + '</b> <em>· ' + esc(x.e.what) + (x.e.by && x.e.by !== 'Scheduler' ? ' (' + esc(first(x.e.by)) + ')' : '') + '</em></div>';
+    var f = el('div', 'fi'); f.innerHTML = '<span>' + esc(shortAgo(x.e.at || now)) + '</span><div><b>' + esc(x.r.title || 'Meeting request') + '</b> <em>· ' + esc(tidyText(x.e.what)) + (x.e.by && x.e.by !== 'Scheduler' ? ' (' + esc(first(x.e.by)) + ')' : '') + '</em></div>';
     f.onclick = function () { go(null, x.r.id); }; feed.appendChild(f);
   });
   if (!events.length) feed.appendChild(el('div', 'empty', 'What the Scheduler does shows here as it happens.'));
@@ -2934,7 +2944,7 @@ var HELP = [
     '<tr><td><b>Emails This Week</b></td><td>Everything that reached scheduling@mismo.org, and how many became requests.</td></tr>' +
     '<tr><td><b>Scheduled</b></td><td>Every booked meeting still ahead, soonest first. This week’s are marked green.</td></tr>' +
     '<tr><td><b>Past Meetings</b></td><td>Meetings we scheduled that have already happened, newest first, for reference.</td></tr>' +
-    '<tr><td><b>Couldn’t Schedule</b></td><td>Requests we tried and closed without a time, with the reason. Open one and press Bring it back to try again.</td></tr>' +
+    '<tr><td><b>Couldn’t Schedule</b></td><td>Requests we tried and closed without a time, with the reason. Open one and press Bring it back to try again, or It Was Scheduled Outside the Scheduler if someone set it up themselves.</td></tr>' +
     '<tr><td><b>Team This Week</b></td><td>How much of each person’s day is free from 9 to 5 Eastern, from Outlook. Open Calendar for the half-hour view.</td></tr>' +
     '<tr><td><b>Incoming Email</b></td><td>The latest emails and what the Scheduler did with each one.</td></tr>' +
     '<tr><td><b>Latest Activity</b></td><td>Everything the Scheduler and the team did, newest first.</td></tr></tbody></table>' +

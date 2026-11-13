@@ -712,3 +712,7 @@ body.railmini .hq nav button .hnav{position:absolute;top:6px;right:6px;margin:0}
 .hok-list li{display:grid;grid-template-columns:10px minmax(0,1fr);gap:10px;align-items:start;font-size:13px;color:var(--ink-2);padding:6px 0;border-top:1px solid var(--border)}
 .hok-list li .hdot{margin-top:4px}.hok-list b{display:block;color:var(--ink);font-size:13.5px}.hok-list em{font-style:normal;color:var(--ink-3,var(--ink-2));font-size:12px}
 @media (max-width:760px){.hok-list{grid-template-columns:1fr}}
+/* long words and links (email signatures, Safe Links) wrap instead of running off the card */
+.feed .fi>div,.log li span,.fu,.fu *,.notice,.hcard p,.hok-list span,.booked .small,pre.src{overflow-wrap:anywhere;min-width:0}
+.log li span:last-child{flex:1 1 auto}
+pre.src{white-space:pre-wrap}
