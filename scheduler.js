@@ -1565,9 +1565,10 @@ function viewDetail(app, req) {
     }
     if (editable && req.robot && req.robot.auto) {
       /* the Scheduler sent the invitation, so it moves or cancels it in Outlook too */
-      if (canApprove() && sl && sl.e > Date.now()) {
-        ba.appendChild(btn('Move Meeting', 'ghost', function () { openMove(req); }, 'cal'));
-        ba.appendChild(btn('Cancel Meeting', 'ghost', function () { cancelMeeting(req); }));
+      /* a meeting that already passed (missed, or a guest asked to move it on the day) can still be moved */
+      if (canApprove() && sl) {
+        ba.appendChild(btn(sl.e > Date.now() ? 'Move Meeting' : 'Reschedule Meeting', 'ghost', function () { openMove(req); }, 'cal'));
+        if (sl.e > Date.now()) ba.appendChild(btn('Cancel Meeting', 'ghost', function () { cancelMeeting(req); }));
       }
     } else if (editable) {
       ba.appendChild(btn('Draft the confirmation email', 'ghost', function () { openDraft(req, 'confirm'); }, 'spark'));
