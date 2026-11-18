@@ -1704,6 +1704,8 @@ function robotPanel(req, editable) {
     else apa.appendChild(el('span', 'small muted', 'Vanessa or Jonna approves this.'));
     apb.appendChild(apa); b.appendChild(apb);
   }
+  /* why the poll has few (or no) times: someone from MISMO is away on some of the days asked for */
+  if (R.awayNote && R.stage === 'polling' && req.status !== 'booked' && req.status !== 'cancelled') b.appendChild(el('div', 'notice', '<b>Why so few times:</b> ' + esc(R.awayNote) + ' If the meeting can go ahead without them, take them off under <b>Edit details</b> and press <b>Send New Times</b>.'));
   if (R.approved && R.stage === 'approve') b.appendChild(el('div', 'notice', '<b>Approved by ' + esc(R.approved.by || 'staff') + '.</b> The calendar invitation goes out within a few minutes.'));
   if (awaitingPollCheck(req)) {
     var pc = el('div', 'notice warn', '<b>Check this one first.</b> It came from outside MISMO and includes other people outside MISMO, so nobody has been emailed yet. If it looks genuine, send the poll. If not, close it and nobody is emailed. ');
@@ -2800,7 +2802,7 @@ function viewDash(app) {
     }
     if (awaitingDecision(r)) {
       var da = canEdit() ? [btn('Send New Times', 'sm ghost', function () { sendNewTimes(r); })] : [];
-      nd.rows.appendChild(dashRow({ k: '#f0b94a', nm: r.title || 'Meeting request', small: 'No time works for everyone: book the best one, make someone optional, or send new times', wh: '', age: 'Your call', ageCls: 'wait', acts: da, go: function () { go(null, r.id); } }));
+      nd.rows.appendChild(dashRow({ k: '#f0b94a', nm: r.title || 'Meeting request', small: 'No time works for everyone: book the best one, make someone optional, or send new times' + (r.robot.awayNote ? '. ' + r.robot.awayNote.replace(/, so th.*$/, '') : ''), wh: '', age: 'Your call', ageCls: 'wait', acts: da, go: function () { go(null, r.id); } }));
       return;
     }
     if (followsFinished(r)) {
