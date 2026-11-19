@@ -897,6 +897,47 @@ function isPast(r) { var s = bookedSlot(r); return !!(s && s.e <= Date.now()); }
 /* Someone set the meeting up themselves (for example Amy sent her own Outlook invitation): record
    when it is, so it shows under Scheduled and Past Meetings and counts in Statistics, and take it
    off the Scheduler's hands so it emails nobody about it. */
+/* A cancelled meeting that still has to happen ("we'll send a new survey for December 1 on"):
+   a new request with the same people, run by the Scheduler, limited to the dates picked. By
+   default Vanessa or Jonna see the poll's times before anyone is emailed (robot.checkFirst).
+   (Jonna, Nov 19: Rod Alba's meeting was cancelled and nothing started the new survey.) */
+function startNewPoll(req) {
+  req = getReq(req.id) || req;
+  var D = dialog('Start a New Poll'), tomorrow = isoAdd(todayISO(ET), 1);
+  var gl = (req.guests || []).filter(function (g) { return g && g.email && !g.gone; });
+  D.body.appendChild(el('p', 'small muted', 'A new request for ' + esc((req.internal || []).map(function (id) { var x = person(id); return x ? x.name : id; }).concat(gl.map(function (g) { return g.name || g.email; })).join(', ')) + ', run by the Scheduler. Every time on the poll is between these dates.'));
+  var row = el('div', 'grow-row');
+  var fi = el('input'); fi.type = 'date'; fi.min = tomorrow; fi.value = tomorrow; fi.style.width = 'auto'; fi.setAttribute('aria-label', 'From');
+  var ti = el('input'); ti.type = 'date'; ti.min = tomorrow; ti.style.width = 'auto'; ti.setAttribute('aria-label', 'To');
+  function syncTo() { if (/^\d{4}-\d{2}-\d{2}$/.test(fi.value)) { ti.min = fi.value; if (!ti.value || ti.value < fi.value) ti.value = isoAdd(fi.value, 17); } }
+  fi.onchange = syncTo; syncTo();
+  row.appendChild(el('span', 'small', 'From')); row.appendChild(fi); row.appendChild(el('span', 'small', 'to')); row.appendChild(ti);
+  D.body.appendChild(row);
+  var cl = el('label', 'small'); cl.style.display = 'flex'; cl.style.gap = '8px'; cl.style.alignItems = 'center'; cl.style.marginTop = '12px';
+  var cb = el('input'); cb.type = 'checkbox'; cb.checked = true; cb.style.width = 'auto';
+  cl.appendChild(cb); cl.appendChild(el('span', '', 'Let me check the times before the poll goes out'));
+  D.body.appendChild(cl);
+  var say = el('p', 'small'); D.body.appendChild(say);
+  D.foot.appendChild(btn('Cancel', 'ghost', function () { D.close(); }));
+  D.foot.appendChild(btn('Start the Poll', '', function () {
+    var a = fi.value, b = ti.value;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(a) || !/^\d{4}-\d{2}-\d{2}$/.test(b) || b < a) { say.innerHTML = '<span style="color:var(--bad)">Pick the first and last day.</span>'; return; }
+    if (!gl.length) { say.innerHTML = '<span style="color:var(--bad)">There’s nobody outside MISMO with an email address on this request.</span>'; return; }
+    var now = Date.now(), R0 = req.robot || {}, check = cb.checked;
+    var nr = { id: rid(10), title: req.title, purpose: req.purpose || '', duration: req.duration || 30, where: req.where || 'Zoom', followDays: req.followDays || DEFAULT_FOLLOW_DAYS,
+      internal: (req.internal || []).slice(), guests: gl.map(function (g) { var x = { id: rid(6), code: linkCode(), name: g.name, email: g.email, org: g.org || '' }; if (g.optional) x.optional = true; return x; }), slots: [],
+      owner: req.owner || me().email, ownerName: req.ownerName || me().name, createdAt: now, createdBy: me().name, source: '', askedBy: req.askedBy || '', askedByEmail: req.askedByEmail || '', restartOf: req.id,
+      robot: { auto: true, stage: 'new', readBy: 'checked', acked: now, requester: R0.requester || { name: req.askedBy || me().name, email: req.askedByEmail || me().email }, offered: [], between: { s: at(a, 0, ET), e: at(b, 24 * 60, ET) } } };
+    if ((req.internalOptional || []).length) nr.internalOptional = req.internalOptional.slice();
+    if (check) nr.robot.checkFirst = true;
+    var span = fmtDay(at(a, 12 * 60, ET), ET) + ' to ' + fmtDay(at(b, 12 * 60, ET), ET);
+    put(nr, 'Started again after “' + (req.title || 'the earlier request') + '” was cancelled: times ' + span + (check ? '. The poll waits for Vanessa or Jonna to check it' : '')).then(function () {
+      var o = clone(getReq(req.id)); o.restartedAs = nr.id; put(o, 'A new poll was started for ' + span);
+      go(null, nr.id);
+    });
+    D.close(); toast(check ? 'Started. In a few minutes the times show on the new request and under Needs You; nobody is emailed until you press Send the Poll.' : 'Started. The poll goes out from scheduling@mismo.org within a few minutes.');
+  }, 'check'));
+}
 function markOutside(req) {
   req = getReq(req.id) || req;
   var D = dialog('Scheduled Outside the System'), now = Date.now(), dur = (+req.duration || 30) * 60000;
@@ -1301,7 +1342,7 @@ function viewList(app) {
   app.appendChild(st);
   var f = el('div', 'filters');
   f.appendChild(seg([[false, 'Everyone’s'], [true, 'Mine']], STATE.listMine, function (v) { STATE.listMine = v; lsSet('listMine', v); render(); }));
-  f.appendChild(seg([['active', 'In Progress'], ['look', 'Needs a Look'], ['booked', 'Scheduled'], ['outside', 'Scheduled Outside'], ['past', 'Past'], ['unscheduled', 'Couldn’t Schedule'], ['all', 'All']], STATE.listShow, function (v) { STATE.listShow = v; lsSet('listShow', v); render(); }));
+  f.appendChild(seg([['active', 'In Progress'], ['look', 'Needs a Look'], ['booked', 'Scheduled'], ['outside', 'Scheduled Outside'], ['past', 'Past'], ['unscheduled', 'Couldn’t Schedule'], ['cancelled', 'Cancelled'], ['all', 'All']], STATE.listShow, function (v) { STATE.listShow = v; lsSet('listShow', v); render(); }));
   app.appendChild(f);
   var m = me().email;
   var list = allReqs().filter(function (r) {
@@ -1312,11 +1353,13 @@ function viewList(app) {
     if (STATE.listShow === 'outside') return r.status === 'booked' && !!r.bookedOutside;
     if (STATE.listShow === 'past') return isPast(r);
     if (STATE.listShow === 'unscheduled') return couldntSchedule(r);
+    if (STATE.listShow === 'cancelled') return r.status === 'cancelled' && !r.closed || r.closed === 'cancelled';
     if (STATE.listShow === 'look') return needsYou(r);
     return true;
   }).sort(function (a, b) {
     var sa = bookedSlot(a), sb = bookedSlot(b);
     if (STATE.listShow === 'booked' && sa && sb) return sa.s - sb.s;
+    if (STATE.listShow === 'cancelled') return (b.closedAt || b.updatedAt || 0) - (a.closedAt || a.updatedAt || 0);
     if ((STATE.listShow === 'past' || STATE.listShow === 'outside') && sa && sb) return sb.s - sa.s;
     if (STATE.listShow === 'unscheduled') return (b.closedAt || b.updatedAt || 0) - (a.closedAt || a.updatedAt || 0);
     return (b.updatedAt || 0) - (a.updatedAt || 0);
@@ -1538,8 +1581,13 @@ function viewDetail(app, req) {
     if (req.askedByEmail) acts.appendChild(btn('Reply to ' + (first(req.askedBy) || 'the person who asked'), 'ghost', function () { openReply(replySourceFor(req), req); }, 'mail'));
     acts.appendChild(btn('Edit details', 'ghost', function () { openEdit(req); }, 'pen'));
   }
+  if (canEdit() && req.status === 'cancelled' && req.closed !== 'duplicate' && !isArchived(req)) {
+    if (req.restartedAs && getReq(req.restartedAs)) acts.appendChild(btn('Open the New Poll', 'ghost', function () { go(null, req.restartedAs); }, 'cal'));
+    else acts.appendChild(btn('Start a New Poll', '', function () { startNewPoll(req); }, 'plus'));
+  }
   head.appendChild(acts);
   app.appendChild(head);
+  if (req.restartOf && getReq(req.restartOf)) { var ro = el('div', 'notice', 'Started again after an earlier request was cancelled. '); var rob = el('button', 'linkbtn', 'Open the cancelled one'); rob.type = 'button'; rob.onclick = function () { go(null, req.restartOf); }; ro.appendChild(rob); app.appendChild(ro); }
   if (isArchived(req)) app.appendChild(el('div', 'notice', '<b>Archived ' + esc(fmtDay(req.archivedAt, VIEW_TZ)) + '.</b> Finished requests move to the archive a month after the meeting (or after they were closed). It’s kept for reference and can’t be changed; guest links no longer work.'));
 
   if (req.status === 'booked') {
