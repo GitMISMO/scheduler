@@ -897,6 +897,64 @@ function isPast(r) { var s = bookedSlot(r); return !!(s && s.e <= Date.now()); }
 /* Someone set the meeting up themselves (for example Amy sent her own Outlook invitation): record
    when it is, so it shows under Scheduled and Past Meetings and counts in Statistics, and take it
    off the Scheduler's hands so it emails nobody about it. */
+/* Send an Invite for a Set Time (Jonna, Nov 19): Vanessa or Jonna pick the day and time, and
+   the Scheduler sends everyone the Outlook invitation from scheduling@mismo.org with the Zoom
+   room link. Pressing Send is the approval. Works on any request that isn't booked: one the
+   Scheduler is running (the poll stops), one run by hand, or one that needs a look. The robot
+   does the sending (robot.sendAt in robot/logic.mjs), so the invitation can be moved or
+   cancelled later like any other. */
+function openSendInvite(req) {
+  if (!canApprove()) { toast('Only Vanessa or Jonna can send an invitation.'); return; }
+  req = getReq(req.id) || req;
+  var dur = (+req.duration || 30) * 60000, R = req.robot || {}, now = Date.now();
+  var guess = R.proposed || (req.slots || []).filter(function (x) { return x.s > now; }).sort(function (a, b) { return a.s - b.s; })[0] || null;
+  var gp = guess ? parts(guess.s, ET) : null, gl = (req.guests || []).filter(function (g) { return g && g.email && !g.gone; });
+  var who = (req.internal || []).map(function (id) { var x = person(id); return x ? x.name : id; }).concat(gl.map(function (g) { return (g.name || g.email) + (g.optional ? ' (optional)' : ''); }));
+  var D = dialog('Send an Invite for a Set Time');
+  var f = el('div', 'move-f');
+  f.innerHTML = '<p class="small muted">Times are Eastern · ' + (+req.duration || 30) + ' minutes. Everyone gets an Outlook invitation from scheduling@mismo.org' + ((req.where || 'Zoom') === 'Zoom' ? ' with the MISMO Zoom room link' : '') + ': ' + esc(who.join(', ') || 'nobody yet') + '.</p>' +
+    '<label class="fl">Day<input type="date" id="si-d"></label>' +
+    '<label class="fl">Start<select id="si-t">' + Array.from({ length: 37 }, function (_, i) { var m = 480 + i * 15; return '<option value="' + m + '">' + esc(fmtTime(at(todayISO(ET), m, ET), ET)) + '</option>'; }).join('') + '</select></label>' +
+    '<p id="si-s" class="small" style="margin-top:10px"></p>';
+  D.body.appendChild(f);
+  var di = $('#si-d', f), ti = $('#si-t', f), say = $('#si-s', f);
+  di.min = todayISO(ET); di.value = gp ? gp.iso : bizDaysAhead(1, todayISO(ET))[0]; di.style.width = 'auto';
+  ti.value = String(gp ? gp.h * 60 + gp.mi - (gp.mi % 15) : 600);
+  var clash = false;
+  function pick() { var d = di.value, m = +ti.value; if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null; var s0 = at(d, m, ET); return { s: s0, e: s0 + dur }; }
+  function check() {
+    var p = pick(); clash = false;
+    if (!p) { say.innerHTML = ''; return; }
+    if (p.s < Date.now()) { say.innerHTML = '<b style="color:var(--bad)">That time has passed.</b>'; return; }
+    var busy = [], unk = [];
+    (req.internal || []).forEach(function (pid) { var st = calState(pid, p.s, p.e), pp = person(pid) || { name: pid }; if (st === null) unk.push(first(pp.name)); else if (st !== 'free') busy.push(first(pp.name) + (st === 'tentative' ? ' (tentative)' : st === 'oof' ? ' (out of office)' : '')); });
+    clash = (req.where || 'Zoom') === 'Zoom' && allReqs().some(function (o) { if (o.id === req.id || o.status !== 'booked' || (o.where || 'Zoom') !== 'Zoom' || zoomRoomOf(o) !== zoomRoomOf(req)) return false; var c = slotById(o, o.chosen); return c && c.s < p.e && c.e > p.s; });
+    var wk = isWeekend(di.value) ? ' <b style="color:var(--bad)">That’s a weekend.</b>' : '';
+    say.innerHTML = (busy.length ? '<b style="color:var(--bad)">Busy then:</b> ' + esc(busy.join(', ')) + '. You can still send it.' : '<b style="color:var(--good)">Everyone from MISMO is free.</b>' + (unk.length ? ' (Outlook not connected for ' + esc(unk.join(', ')) + '.)' : '')) + wk;
+    if (clash) say.innerHTML += ' <b style="color:var(--bad)">Another Scheduler Zoom meeting is in the ' + (zoomRoomOf(req) === 'membership' ? 'membership' : 'MISMO') + ' room then, so pick another time.</b>';
+  }
+  di.onchange = check; ti.onchange = check; check();
+  D.foot.appendChild(btn('Cancel', 'ghost', D.close));
+  D.foot.appendChild(btn('Send the Invite', '', function () {
+    var p = pick();
+    if (!p || p.s < Date.now()) { toast('Pick a day and a time that hasn’t passed.'); return; }
+    if (clash) { toast('The Zoom room is taken then. Pick another time.'); return; }
+    if (!(req.internal || []).length) { toast('Add who from MISMO should attend first, under Edit details.'); return; }
+    var r = clone(getReq(req.id)), R0 = r.robot || {}, sa = { s: p.s, e: p.e, by: me().name, at: Date.now() };
+    r.robotEdit = R0.auto && R0.stage !== 'person' ? { sendAt: sa }
+      : { auto: true, stage: 'new', why: '', readBy: R0.readBy === 'claude' ? 'claude' : 'checked', acked: R0.acked || Date.now(), requester: R0.requester || { name: r.askedBy || me().name, email: r.askedByEmail || me().email }, sendAt: sa };
+    put(r, 'Asked the Scheduler to send the invitation for ' + slotLabel(p, ET, true));
+    D.close(); toast('Sending. The invitation goes out from scheduling@mismo.org within a few minutes.');
+  }, 'mail'));
+}
+/* right after a request is started on the page: offer times, or send an invitation for a set time */
+function afterNewRequest(req) {
+  if (!canApprove()) { openPicker(req); return; }
+  var D = dialog('What Next?');
+  D.body.appendChild(el('p', 'small muted', 'Offer times and let people answer, or send the invitation for a time that’s already agreed.'));
+  D.foot.appendChild(btn('Send an Invite for a Set Time', 'ghost', function () { D.close(); openSendInvite(getReq(req.id) || req); }, 'mail'));
+  D.foot.appendChild(btn('Pick Times to Offer', '', function () { D.close(); openPicker(getReq(req.id) || req); }, 'cal'));
+}
 /* A cancelled meeting that still has to happen ("we'll send a new survey for December 1 on"):
    a new request with the same people, run by the Scheduler, limited to the dates picked. By
    default Vanessa or Jonna see the poll's times before anyone is emailed (robot.checkFirst).
@@ -1525,7 +1583,7 @@ function viewNew(app) {
     if (pre) { req.inboxId = pre.inboxId; if (!req.askedByEmail) req.askedByEmail = pre.askedByEmail; }
     put(req, pre ? 'Started the request from an email to ' + ((INBOX.server.docs[pre.inboxId] || {}).mailbox || 'the scheduling inbox') : 'Started the request').then(function () {
       if (pre) updInbox(pre.inboxId, { status: 'started', reqId: req.id });
-      go(null, req.id); setTimeout(function () { openPicker(getReq(req.id)); }, 150);
+      go(null, req.id); setTimeout(function () { afterNewRequest(getReq(req.id)); }, 150);
     });
   }));
   if (pre) { $('#f-src', app).value = pre.src; setTimeout(function () { var b = $('#f-read', app); if (b) b.click(); }, 50); }
@@ -1581,6 +1639,7 @@ function viewDetail(app, req) {
     if (req.askedByEmail) acts.appendChild(btn('Reply to ' + (first(req.askedBy) || 'the person who asked'), 'ghost', function () { openReply(replySourceFor(req), req); }, 'mail'));
     acts.appendChild(btn('Edit details', 'ghost', function () { openEdit(req); }, 'pen'));
   }
+  if (editable && canApprove() && req.status !== 'booked') acts.appendChild(btn('Send an Invite', 'ghost', function () { openSendInvite(req); }, 'mail'));
   if (canEdit() && req.status === 'cancelled' && req.closed !== 'duplicate' && !isArchived(req)) {
     if (req.restartedAs && getReq(req.restartedAs)) acts.appendChild(btn('Open the New Poll', 'ghost', function () { go(null, req.restartedAs); }, 'cal'));
     else acts.appendChild(btn('Start a New Poll', '', function () { startNewPoll(req); }, 'plus'));
@@ -1756,6 +1815,7 @@ function robotPanel(req, editable) {
   }
   /* why the poll has few (or no) times: someone from MISMO is away on some of the days asked for */
   if (R.awayNote && R.stage === 'polling' && req.status !== 'booked' && req.status !== 'cancelled') b.appendChild(el('div', 'notice', '<b>Why so few times:</b> ' + esc(R.awayNote) + ' If the meeting can go ahead without them, take them off under <b>Edit details</b> and press <b>Send New Times</b>.'));
+  if (R.sendAt && R.sendAt.s && req.status !== 'booked' && req.status !== 'cancelled') b.appendChild(el('div', 'notice', '<b>' + esc(R.sendAt.by || 'Staff') + ' asked for the invitation for ' + esc(slotLabel(R.sendAt, VIEW_TZ, true)) + '.</b> It goes out from scheduling@mismo.org within a few minutes.'));
   if (R.approved && R.stage === 'approve') b.appendChild(el('div', 'notice', '<b>Approved by ' + esc(R.approved.by || 'staff') + '.</b> The calendar invitation goes out within a few minutes.'));
   if (awaitingPollCheck(req)) {
     var pc = R.checkFirst
@@ -3086,6 +3146,7 @@ var HELP = [
     ['Can I forward a request from my own inbox?', 'Yes. Forward it to scheduling@mismo.org and say who should attend. Your Outlook can also do it for you with a rule.'],
     ['Does the Scheduler send the calendar invite?', 'Yes. Once a time is approved, the Outlook invitation goes out from scheduling@mismo.org with the Zoom room link, and the meeting sits on the scheduling@mismo.org calendar. If it can’t, Vanessa gets a button to send it from Outlook.'],
     ['Which Zoom link do meetings use?', 'The MISMO Zoom room: info@mismo.org’s Personal Meeting Room, mba-org.zoom.us/j/2825175426. Guests can join without anyone hosting.'],
+    ['Can it send an invite for a time that’s already agreed?', 'Yes. Open the request and press <b>Send an Invite</b> (or choose <b>Send an Invite for a Set Time</b> right after starting a New Request), pick the day and time, and press <b>Send the Invite</b>. It shows who from MISMO is busy then, and won’t use a time when the Zoom room is taken. Within a few minutes everyone gets the Outlook invitation from scheduling@mismo.org with the Zoom link, and any poll that was out stops. Only Vanessa and Jonna see the button. By email, write to scheduling@mismo.org asking for an invite at a set day and time (“please send an invite for Tuesday, Dec 1 at 2 ET with …”): there’s no poll; if everyone from MISMO is free it waits under Needs You for approval, and if not, you’re told why.'],
     ['How do I move or cancel a booked meeting?', 'Open the request and press <b>Move Meeting</b> (pick a day and time; it shows who from MISMO is free) or <b>Cancel Meeting</b>. The Scheduler cancels the old Outlook invitation and sends a new one, or sends everyone Outlook’s cancellation. Guests can also reply to their invitation with a time that suits them: if everyone from MISMO is free then, the move waits for Vanessa or Jonna to approve. Meetings booked before November 7 can be moved too, but their old invitation has to be deleted in Outlook by hand.'],
     ['Where do old requests go?', 'A month after the meeting (or a month after a request was closed without one), the Scheduler moves it to a monthly archive so the working file stays small. Archived requests still show in All Requests (Past), Couldn’t Schedule, Statistics and search, marked Archived and read-only. Emails in the scheduling inbox are trimmed to the newest message after two weeks and cleared after 120 days; the request keeps its own copy of what was asked.'],
     ['What if a guest emails their times instead of using the link?', 'The Scheduler reads the reply. Times on the poll count as their answer; a new time they suggest is held for approval (or added to the poll when there are other guests) if everyone from MISMO is free. Vanessa gets a Reply About email saying what it did. Vague replies change nothing.'],
