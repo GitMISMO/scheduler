@@ -1269,15 +1269,33 @@ function go(tab, reqId) {
   if (reqId) { STATE.tab = 'dash'; STATE.pane = 'req'; STATE.reqId = reqId; }
   else if (PANE_VIEWS.indexOf(tab) >= 0) { STATE.tab = 'dash'; STATE.pane = tab; STATE.reqId = null; }
   else { STATE.tab = PAGES.indexOf(tab) >= 0 ? tab : 'dash'; STATE.pane = null; STATE.reqId = null; }
-  var h = reqId ? '#r=' + reqId : '#tab=' + (STATE.pane || STATE.tab);
-  if (location.hash !== h) history.pushState(null, '', h);
+  /* CN-033 (Nov 25, 2026): the browser's Back is the shared /assets/back.js, which follows the
+     menu button carrying aria-current and the layers registered below. The page no longer puts
+     its own steps in the history or changes the address. A link that opened it (#r=<id> from an
+     email or a Team HQ task) still opens that request; the first move after that tidies the
+     address, so a reload doesn't reopen something already closed. */
+  if (location.hash) try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
   render({ full: true });
+  markRail();
   if (!STATE.pane || wasTab !== STATE.tab) window.scrollTo(0, 0);
   var pb = $('#pane-b'); if (pb && STATE.pane) pb.scrollTop = 0;
 }
 function closePane() { go('dash'); }
-window.addEventListener('popstate', function () { readHash(); render({ full: true }); });
-window.addEventListener('hashchange', function () { readHash(); render({ full: true }); });
+/* a #r=<id> link followed in a tab where the Scheduler is already open */
+window.addEventListener('hashchange', function () { if (!location.hash) return; readHash(); render({ full: true }); markRail(); });
+/* the left-menu button (or Help) of the page showing carries aria-current, whichever way the page changed */
+function markRail() {
+  $$('.rail nav button[data-hq], #help-btn[data-hq]').forEach(function (b) {
+    if (b.getAttribute('data-hq') === STATE.tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  });
+}
+/* What the browser's Back closes before it changes page, bottom layer first (CN-033): the
+   right-hand panel (as its x does), then a dialog on top (as Escape does, the top one only). */
+if (window.MismoBack) {
+  MismoBack.layer({ isOpen: function () { return !!STATE.pane; }, close: closePane });
+  MismoBack.layer({ isOpen: function () { return $$('.scrim').length > 0; },
+    close: function () { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); } });
+}
 
 function render(opts) {
   var app = $('#app'); if (!app) return;
@@ -3109,7 +3127,7 @@ var HELP = [
     '<tr><td>Try a fresh set of times</td><td>Press <b>Send New Times</b> (on the Needs You row or on the request).</td><td>New times go on the poll and everyone who answered gets a New Times email.</td></tr>' +
     '<tr><td>Change the length</td><td>Press <b>Edit details</b> and change it (for example to an hour).</td><td>A fresh set of times at the new length goes out.</td></tr>' +
     '<tr><td>Someone set it up themselves</td><td>Press <b>Scheduled Outside the System</b> and enter the day and time.</td><td>It moves to Scheduled Outside the System on the Dashboard, counts in Statistics as scheduled, and the Scheduler emails no one about it.</td></tr><tr><td>The same meeting has two requests</td><td>Press <b>Close as Duplicate</b> on the extra one (or <b>It’s a Duplicate</b> if it was already closed).</td><td>It’s left out of Statistics, so the meeting counts once.</td></tr><tr><td>Give up</td><td>Press <b>Close as Couldn’t Schedule</b>.</td><td>It moves to Couldn’t Schedule on the Dashboard for reference.</td></tr></tbody></table>'; } },
-  { id: 'dash', k: '#f0b94a', t: 'The Dashboard', h: function () { return '<h2>Reading the Dashboard</h2><p class="lead">Everything is on one page. Click any row to open it in the panel on the right; press × or Escape to close it.</p>' +
+  { id: 'dash', k: '#f0b94a', t: 'The Dashboard', h: function () { return '<h2>Reading the Dashboard</h2><p class="lead">Everything is on one page. Click any row to open it in the panel on the right; press × or Escape to close it. The browser’s Back goes to the last page you were on and closes an open panel first; it never undoes a change.</p>' +
     '<table><thead><tr><th>Part</th><th>What it shows</th></tr></thead><tbody>' +
     '<tr><td><b>The Banner</b></td><td>What needs you, polls out, and meetings booked this week. The ring shows how many of the last 30 days’ requests are booked.</td></tr>' +
     '<tr><td><b>Needs You</b></td><td>Shows at the top only when something is waiting: times to approve, polls where no time works (your call), polls whose three follow-ups went unanswered, requests the Scheduler stopped on, and people to follow up with on requests run by hand.</td></tr>' +

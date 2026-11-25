@@ -50,6 +50,15 @@ the log.
 Before uploading a new copy of a page, download the current one from GitHub first and make your changes to
 that copy. Uploading an older copy silently undoes everything that changed since.
 
+The browser's Back button is the shared `/assets/back.js` (CN-033), loaded in `index.html` right after
+session.js; never copy it here. It follows the left-menu button (and Help, `data-back-page="help"`) carrying
+`aria-current`, and first closes what `scheduler.js` registers with `MismoBack.layer`: the right-hand panel,
+then a dialog. The page adds no history steps of its own and doesn't change the address; a `#r=<id>` link
+from an email or a Team HQ task still opens that request.
+
+Before uploading, run the page checks: `npm install` once, then `npm test` (`tests/run.js`, a headless
+browser on the preview's sample data, with `/assets/back.js` read from the live copy).
+
 Storage keys are `tools:scheduler:<name>`. The page never calls `localStorage.clear()`.
 
 When `scheduler.js`, `scheduler.css` or `rail.js` change, bump the `?v=` stamp on their tags in `index.html` and upload it too, so browsers pick up the new copy. The full developer handbook is `robot/README.md` in `GitMISMO/scheduler-data`.
