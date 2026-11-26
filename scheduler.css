@@ -46,23 +46,16 @@ a{color:var(--link)}
 h1,h2,h3{letter-spacing:-.012em;margin:0;text-wrap:balance}
 button,input,select,textarea{font:inherit;color:inherit}
 
-/* ===== masthead (the Summit HQ / Marketing HQ bar) ===== */
-.hqtop{position:sticky;top:0;z-index:50;height:58px;background:var(--navy);color:#fff;display:flex;align-items:center;
-  padding:0 max(16px,env(safe-area-inset-left,0px));box-shadow:0 1px 0 rgba(80,164,219,.28)}
-.logoplate{background:#fff;border-radius:7px;padding:8px 14px;display:flex;align-items:center;line-height:0;flex:0 0 auto}
-.logoplate .wordmark{height:22px;width:auto;display:block}
-.mastrule{display:block;width:2px;height:32px;flex:0 0 auto;margin-inline:18px;border-radius:1px;background:var(--sky)}
-.hqname{font-size:15.5px;font-weight:700;color:var(--sky);white-space:nowrap}
+/* ===== masthead: the bar itself is styled in the frame section below (CN-053) ===== */
 .hqtop-r{margin-left:auto;display:flex;align-items:center;gap:12px}
 .eyebrow-m{font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;color:rgba(255,255,255,.62);font-weight:600;white-space:nowrap}
 .theme-btn{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:5px;padding:5px 10px;font-size:11.5px;cursor:pointer}
 .theme-btn:hover{background:rgba(255,255,255,.18)}
 #rs-account{flex:0 0 auto;display:inline-flex;align-items:center}
 @media(max-width:700px){.eyebrow-m{display:none}}
-@media(max-width:480px){.mastrule{margin-inline:10px}.logoplate{padding:7px 10px}.logoplate .wordmark{height:18px}}
 
 /* ===== tabs ===== */
-.tabs{background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:58px;z-index:40}
+.tabs{background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:var(--hq-h);z-index:40}
 .tabs-in{max-width:1180px;margin:0 auto;display:flex;gap:4px;padding:0 16px;overflow-x:auto;scrollbar-width:none}
 .tab{appearance:none;background:none;border:0;border-bottom:3px solid transparent;padding:13px 12px 10px;font-weight:600;color:var(--ink-2);cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:7px}
 .tab:hover{color:var(--ink)}
@@ -302,17 +295,13 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--sky);outline-off
 .kbd{font-family:var(--mono);font-size:12px;background:var(--surface-3);border:1px solid var(--border);border-radius:4px;padding:1px 5px}
 
 /* ===== frame ported verbatim from Team HQ ===== */
-:root{--navy:#0d314c;--sky:#74bfeb;--navy-deep:#06202f;--navy-mid:#14486e;--sky-soft:#a9d8f3;--sky-wash:#e4f2fb;--sunk:var(--surface-2);--line:var(--rule);--accent-soft:var(--sky-wash);--hq-h:64px;--rail-w:240px;--rail-mini:62px}
+:root{--navy:#0d314c;--sky:#74bfeb;--navy-deep:#06202f;--navy-mid:#14486e;--sky-soft:#a9d8f3;--sky-wash:#e4f2fb;--sunk:var(--surface-2);--line:var(--rule);--accent-soft:var(--sky-wash);--hq-h:68px;--rail-w:240px;--rail-mini:62px}
 body{padding-left:var(--rail-w);transition:padding-left .2s cubic-bezier(.4,0,.2,1)}
-.hqtop{position:sticky;top:env(safe-area-inset-top,0px);z-index:97;height:var(--hq-h);
-  background:var(--navy);color:#fff;display:flex;align-items:center;gap:0;
-  padding:0 22px;box-shadow:0 1px 0 rgba(80,164,219,.28);
-  margin-left:calc(0px - var(--rail-w));width:calc(100% + var(--rail-w));
-  transition:margin-left .2s cubic-bezier(.4,0,.2,1), width .2s cubic-bezier(.4,0,.2,1)}
 /* ---------- masthead ---------- */
-.hqtop{position:sticky;top:env(safe-area-inset-top,0px);z-index:97;height:var(--hq-h);
+/* Certification Management's masthead, to the pixel (CN-053): 13px above and below the 42px logo box = 68px. */
+.hqtop{position:sticky;top:env(safe-area-inset-top,0px);z-index:97;height:var(--hq-h);box-sizing:border-box;
   background:var(--navy);color:#fff;display:flex;align-items:center;gap:0;
-  padding:0 22px;box-shadow:0 1px 0 rgba(80,164,219,.28);
+  padding:13px 22px;box-shadow:0 1px 0 rgba(80,164,219,.28);
   margin-left:calc(0px - var(--rail-w));width:calc(100% + var(--rail-w));
   transition:margin-left .2s cubic-bezier(.4,0,.2,1), width .2s cubic-bezier(.4,0,.2,1)}
 body.railmini .hqtop{margin-left:calc(0px - var(--rail-mini));width:calc(100% + var(--rail-mini))}
@@ -320,25 +309,27 @@ body.railmini .hqtop{margin-left:calc(0px - var(--rail-mini));width:calc(100% + 
 @media (prefers-reduced-motion:reduce){
 .hqtop{transition:none}
 }
-.hqtop .mastrule{display:block;width:2px;height:34px;flex:0 0 auto;margin-inline:20px;border-radius:1px;background:var(--sky)}
-.hqtop .hqname{font-size:15.5px;font-weight:700;letter-spacing:-.005em;color:var(--sky);white-space:nowrap}
+.hqtop .mastrule{display:block;width:1px;height:42px;flex:0 0 auto;margin-inline:14px;background:rgba(80,164,219,.4)}
+.hqtop .hqname{font-size:16px;font-weight:500;letter-spacing:0;color:#94c8e9;white-space:nowrap}
 .hqtop-r{margin-left:auto;display:flex;align-items:center;gap:9px}
 .hqtop .eyebrow-m{font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;color:rgba(255,255,255,.62);font-weight:600;white-space:nowrap}
 
 @media(max-width:1180px){
 .hqtop .eyebrow-m{display:none}
 }
-.logoplate{background:#fff;border-radius:7px;padding:8px 14px;display:flex;align-items:center;line-height:0;flex:0 0 auto;position:relative}
+.logoplate{background:#fff;border-radius:5px;padding:9px 13px;display:flex;align-items:center;line-height:0;flex:0 0 auto;position:relative;box-shadow:0 1px 0 rgba(80,164,219,.35)}
 .logoplate .wordmark{height:24px;width:auto;display:block}
-.santa{position:absolute;display:none;pointer-events:none;left:-9px;top:-12px;width:31px;height:31px}
-html[data-season="december"] .santa{display:block}
 
-@media(max-width:520px){
-.hqtop{padding:0 12px}
+/* Phones: Certification Management's phone masthead (62px bar, 11px 16px padding, 7px 10px box, 19px logo, 11px gaps, 40px divider). */
+@media(max-width:560px){
+:root{--hq-h:62px}
+.hqtop{padding:11px 16px}
 .hqtop .savestate{display:none}
-.hqtop .mastrule{margin-inline:12px}
+.hqtop .mastrule{margin-inline:11px;height:40px}
 .logoplate{padding:7px 10px}
 .logoplate .wordmark{height:19px}
+.hqtop .hqname{font-size:13px;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.hqtop-r{gap:10px}
 }
 /* ---------- rail ---------- */
 .hq.rail{position:fixed;left:0;top:calc(var(--hq-h) + env(safe-area-inset-top,0px));bottom:0;width:var(--rail-w);z-index:95;
@@ -680,7 +671,7 @@ body.railmini .rail nav button .n{display:none}
 
 
 /* an email opened from the Dashboard */
-.fu.in-focus{box-shadow:0 0 0 2px var(--sky);scroll-margin-top:80px}
+.fu.in-focus{box-shadow:0 0 0 2px var(--sky);scroll-margin-top:calc(var(--hq-h) + 16px)}
 
 /* System Health tab: squared cards, round status dots only */
 .hq nav button .hnav{margin-left:auto;width:9px;height:9px;border-radius:50%;flex:none;background:var(--good)}

@@ -59,6 +59,8 @@ from an email or a Team HQ task still opens that request.
 Before uploading, run the page checks: `npm install` once, then `npm test` (`tests/run.js`, a headless
 browser on the preview's sample data, with `/assets/back.js` read from the live copy).
 
+The masthead is Certification Management's, to the pixel (CN-053): a 68px bar (62px on a phone) set by `--hq-h` in `scheduler.css`. The left menu, the right-hand panel and anything that scrolls under the bar all use `--hq-h`, so never write the bar height as a number. The December hat is the shared `/assets/holiday.js` that session.js loads; don't add one here.
+
 Storage keys are `tools:scheduler:<name>`. The page never calls `localStorage.clear()`.
 
 When `scheduler.js`, `scheduler.css` or `rail.js` change, bump the `?v=` stamp on their tags in `index.html` and upload it too, so browsers pick up the new copy. The full developer handbook is `robot/README.md` in `GitMISMO/scheduler-data`.
