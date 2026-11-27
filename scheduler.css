@@ -750,3 +750,6 @@ details.srcbox summary{cursor:pointer;font-size:13px;font-weight:600;color:var(-
 .nprow p.np-none{color:var(--warn)}
 .np-cause{display:inline-block;margin-top:6px;font-size:12px;font-weight:600;color:var(--ink-3)}
 .np-add{margin-top:8px}
+/* a date filter at the top of a Dashboard panel (Scheduled, Didn't Go to Plan) */
+.panel > .seg.pseg{display:flex;margin:10px 16px 2px;width:auto}
+.panel > .seg.pseg button{flex:1 1 0;padding:6px 8px;font-size:12.5px}

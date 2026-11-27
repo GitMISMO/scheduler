@@ -737,8 +737,21 @@ function guestState(req, g) {
 function isAuto(req) { return !!(req && req.robot && req.robot.auto && req.robot.stage !== 'person'); }
 function needsLook(req) { return !!(req && req.robot && req.robot.auto && req.robot.stage === 'person' && req.status !== 'booked' && req.status !== 'cancelled'); }
 function awaitingApproval(req) { return !!(req && req.robot && req.robot.auto && req.robot.stage === 'approve' && req.robot.proposed && !req.robot.approved && req.status !== 'booked' && req.status !== 'cancelled'); }
-/* warm follow-ups the Scheduler sends a guest who hasn't answered: a week after the poll, then weekly, three at most (same rule as robot/logic.mjs) */
-var FOLLOW_EVERY = 7 * 864e5, FOLLOW_MAX = 3;
+/* warm follow-ups the Scheduler sends a guest who hasn't answered: three working days after the poll, then every three working days, three at most (same rule as robot/logic.mjs) */
+var FOLLOW_EVERY = 7 * 864e5, FOLLOW_MAX = 3, FOLLOW_DAYS = 3;   /* FOLLOW_EVERY: the "quick request" window; follow-ups every three working days (Nov 27; was weekly) */
+/* MISMO working days, the same rule as robot/time.mjs (holidays skipped), for follow-up dates */
+var HOL_CACHE = {};
+function mismoHolidays(y) {
+  if (HOL_CACHE[y]) return HOL_CACHE[y];
+  var i3 = function (m, d) { return y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0'); };
+  var nth = function (m, wd, n) { var d; if (n > 0) { d = 1; while (new Date(Date.UTC(y, m - 1, d)).getUTCDay() !== wd) d++; return i3(m, d + 7 * (n - 1)); } d = new Date(Date.UTC(y, m, 0)).getUTCDate(); while (new Date(Date.UTC(y, m - 1, d)).getUTCDay() !== wd) d--; return i3(m, d); };
+  var obs = function (iso) { var w = dow(iso); return w === 6 ? isoAdd(iso, -1) : w === 0 ? isoAdd(iso, 1) : iso; };
+  var h = {}; [nth(1, 1, 3), nth(2, 1, 3), nth(5, 1, -1), obs(i3(6, 19)), obs(i3(7, 4)), nth(9, 1, 1), obs(i3(11, 11)), i3(1, 1)].forEach(function (x) { h[x] = 1; });
+  var tg = nth(11, 4, 4); h[tg] = 1; h[isoAdd(tg, 1)] = 1; for (var d = 25; d <= 31; d++) h[i3(12, d)] = 1;
+  return (HOL_CACHE[y] = h);
+}
+function isWorkdayISO(iso) { return !isWeekend(iso) && !mismoHolidays(+iso.slice(0, 4))[iso]; }
+function afterWorkdays(t, n) { var p = parts(t, ET), iso = p.iso; while (n > 0) { iso = isoAdd(iso, 1); if (isWorkdayISO(iso)) n--; } return at(iso, p.h * 60 + p.mi, ET); }
 /* a quick request (the email asked for dates within a week) is followed up at noon Eastern each working day */
 function askedWins(req) {
   var R = req.robot || {}, ok = function (w) { return w && isFinite(w.s) && isFinite(w.e) && w.e > w.s; };
@@ -754,8 +767,8 @@ function followOf(req, g) {
     var lq = mine.length ? mine[mine.length - 1] : since;
     return { sent: mine.length, next: !mine.length && restart ? restart : at(addBiz(lq, 1), 12 * 60, ET), quick: true };
   }
-  var last = mine.length ? mine[mine.length - 1] : (restart ? restart - FOLLOW_EVERY : since);
-  return { sent: mine.length, next: last + FOLLOW_EVERY };
+  var last = mine.length ? mine[mine.length - 1] : since;
+  return { sent: mine.length, next: !mine.length && restart ? restart : afterWorkdays(last, FOLLOW_DAYS) };
 }
 function followWaiting(req) { return (req.guests || []).filter(function (g) { return g.sentAt && !g.answer && !g.gone; }); }
 function followsFinished(req) { var R = req.robot || {}; return isAuto(req) && R.stage === 'polling' && !!R.followDone && !R.followStop && req.status !== 'booked' && req.status !== 'cancelled' && followWaiting(req).length > 0; }
@@ -763,7 +776,7 @@ function startFollows(req) {
   var fresh = followWaiting(req).some(function (g) { return followOf(req, g).sent >= FOLLOW_MAX; }), r = clone(req);
   r.robotEdit = fresh ? { followRestartAt: Date.now(), followStop: null, followDone: 0 } : { followStop: null, followDone: 0 };
   put(r, fresh ? 'Started follow-ups again' : 'Turned follow-ups back on');
-  toast(fresh ? 'Follow-ups started again: the first goes out within a couple of hours, then one a week, three in all.' : 'Follow-ups are back on.');
+  toast(fresh ? 'Follow-ups started again: the first goes out within a couple of hours, then one every three working days, three in all.' : 'Follow-ups are back on.');
 }
 function stopFollows(req) {
   var r = clone(req); r.robotEdit = { followStop: { by: me().name, at: Date.now() }, followDone: 0 };
@@ -1923,7 +1936,7 @@ function viewDetail(app, req) {
         if (auto && g.sentAt && !g.answer && req.robot && req.robot.stage === 'polling') {
           var askedNow = req.robot.followNow && req.robot.followNow[g.id];
           var fb = a.appendChild(btn(askedNow ? 'Follow-Up on Its Way' : 'Send a Follow-Up Now', 'ghost sm', function () {
-            if (!confirm('Send ' + (g.name || g.email) + ' a follow-up email from scheduling@mismo.org now? It doesn’t change when the regular weekly follow-ups go.')) return;
+            if (!confirm('Send ' + (g.name || g.email) + ' a follow-up email from scheduling@mismo.org now? It doesn’t change when the regular follow-ups go.')) return;
             var r = clone(getReq(req.id)), fn = Object.assign({}, (r.robot && r.robot.followNow) || {});
             fn[g.id] = { by: me().name, at: Date.now() };
             r.robotEdit = { followNow: fn };
@@ -2019,7 +2032,7 @@ function robotPanel(req, editable) {
       if (s.sent >= FOLLOW_MAX) return nm + ': all ' + FOLLOW_MAX + ' sent, no answer yet';
       return nm + ': ' + s.sent + ' of ' + FOLLOW_MAX + ' sent · next ' + esc(fmtDay(Math.max(s.next, Date.now()), VIEW_TZ));
     });
-    fb.innerHTML = '<b>' + (followsFinished(req) ? 'Three follow-ups went out with no answer. Start them again, or leave them stopped.' : R.followStop ? 'Follow-ups are stopped' + (R.followStop.by ? ' (' + esc(first(R.followStop.by)) + ')' : '') + '.' : '' + (isQuickReq(req, (fw[0] || {}).sentAt) ? 'This one is quick, so friendly follow-ups go at noon Eastern each working day, three at most.' : 'Friendly follow-ups go out a week apart, three at most.') + '') + '</b><br>' + lines.join('<br>');
+    fb.innerHTML = '<b>' + (followsFinished(req) ? 'Three follow-ups went out with no answer. Start them again, or leave them stopped.' : R.followStop ? 'Follow-ups are stopped' + (R.followStop.by ? ' (' + esc(first(R.followStop.by)) + ')' : '') + '.' : '' + (isQuickReq(req, (fw[0] || {}).sentAt) ? 'This one is quick, so friendly follow-ups go at noon Eastern each working day, three at most.' : 'Friendly follow-ups go out every three working days, three at most.') + '') + '</b><br>' + lines.join('<br>');
     if (editable) {
       var fa = el('div', 'grow-row'); fa.style.marginTop = '10px';
       if (R.followStop || followsFinished(req)) fa.appendChild(btn('Start Follow-Ups Again', 'sm', function () { startFollows(req); }));
@@ -3107,18 +3120,33 @@ function viewDash(app) {
 
   /* ---- Scheduled: every booked meeting still ahead ---- */
   var whoOf = function (r) { return (r.internal || []).map(function (id) { var p = person(id); return p ? first(p.name) : id; }).concat((r.guests || []).map(function (g) { return g.name || g.email; })).join(', '); };
-  var cu = dashPanel('Scheduled', coming.length ? plural(coming.length, 'meeting', 'meetings') + ' ahead' : '', coming.length > 6 ? 'All Scheduled' : '', function () { STATE.listShow = 'booked'; lsSet('listShow', 'booked'); go('list'); });
-  coming.slice(0, 6).forEach(function (x) {
-    var r = x.r, soon = x.sl.s < now + 7 * 864e5;
-    cu.rows.appendChild(dashRow({ k: '#5fd39a', nm: r.title || 'Meeting', small: whoOf(r), wh: fmtTime(x.sl.s, VIEW_TZ) + ' ' + tzAbbr(x.sl.s, VIEW_TZ) + ' · ' + (r.where || 'Zoom'), age: dayWord(parts(x.sl.s, VIEW_TZ).iso).replace(/^./, function (c) { return c.toUpperCase(); }), ageCls: soon ? 'ok' : '', go: function () { go(null, r.id); } }));
+  /* Jonna, Nov 27: "if there were 10 scheduled does it only show 1?" Scheduled used to show only
+     meetings still ahead. Now a date filter: Upcoming, or the meetings already held in a period. */
+  var sr = STATE.schedRange || lsGet('schedRange', 'ahead');
+  var bookedAll = booked.filter(function (r) { return !r.bookedOutside; }).map(function (r) { return { r: r, sl: slotById(r, r.chosen) }; }).filter(function (x) { return x.sl; });
+  var ahead = bookedAll.filter(function (x) { return x.sl.e > now; }).sort(function (a, b) { return a.sl.s - b.sl.s; });
+  var held = function (days) { return bookedAll.filter(function (x) { return x.sl.e <= now && (!days || x.sl.s >= now - days * 864e5); }).sort(function (a, b) { return b.sl.s - a.sl.s; }); };
+  var shown = sr === 'ahead' ? ahead : sr === 'all' ? ahead.concat(held(0)) : held(+sr);
+  var sHint = sr === 'ahead' ? plural(ahead.length, 'meeting', 'meetings') + ' ahead' : sr === 'all' ? ahead.length + ' ahead · ' + held(0).length + ' held' : plural(shown.length, 'meeting', 'meetings') + ' held';
+  var cu = dashPanel('Scheduled', sHint, shown.length > 8 ? 'All' : '', function () { STATE.listShow = sr === 'ahead' ? 'booked' : 'past'; lsSet('listShow', STATE.listShow); go('list'); });
+  var sseg = seg([['ahead', 'Upcoming'], ['30', 'Last 30 Days'], ['90', 'Last 90 Days'], ['all', 'All']], sr, function (v) { STATE.schedRange = v; lsSet('schedRange', v); render(); });
+  sseg.classList.add('pseg'); cu.p.insertBefore(sseg, cu.rows);
+  shown.slice(0, 8).forEach(function (x) {
+    var r = x.r, past = x.sl.e <= now, soon = !past && x.sl.s < now + 7 * 864e5;
+    var dayTag = past ? 'Held ' + fmtDay(x.sl.s, VIEW_TZ) : dayWord(parts(x.sl.s, VIEW_TZ).iso).replace(/^./, function (c) { return c.toUpperCase(); });
+    cu.rows.appendChild(dashRow({ k: past ? '#9fb3c8' : '#5fd39a', nm: r.title || 'Meeting', small: whoOf(r), wh: fmtTime(x.sl.s, VIEW_TZ) + ' ' + tzAbbr(x.sl.s, VIEW_TZ) + ' · ' + (r.where || 'Zoom'), age: dayTag, ageCls: soon ? 'ok' : '', go: function () { go(null, r.id); } }));
   });
-  if (!coming.length) cu.p.appendChild(el('div', 'empty', 'Nothing on the calendar ahead. Once a time is approved, the meeting shows here until it happens.'));
+  if (!shown.length) cu.p.appendChild(el('div', 'empty', sr === 'ahead' ? 'Nothing on the calendar ahead. Once a time is approved, the meeting shows here until it happens.' : 'No meetings booked by the Scheduler were held in this period.'));
   L.appendChild(cu.p);
 
   /* ---- Didn't Go to Plan: scheduled outside the system, cancelled, couldn't schedule (Jonna, Nov 27:
      these show where the Scheduler didn't do its job, so each one asks why) ---- */
-  var npAll = all.filter(outcomeKind).map(function (r) { return { r: r, k: outcomeKind(r), t: (r.outcome && r.outcome.at) || (r.bookedOutside && r.bookedOutside.at) || r.closedAt || r.updatedAt || 0 }; }).sort(function (a, b) { return b.t - a.t; });
-  var np = dashPanel('Didn’t Go to Plan', npAll.length ? 'newest first' : '', npAll.length > 7 ? 'All' : '', function () { STATE.listShow = 'notplan'; lsSet('listShow', 'notplan'); go('list'); });
+  var npr = STATE.npRange || lsGet('npRange', '30');
+  var npAll = all.filter(outcomeKind).map(function (r) { return { r: r, k: outcomeKind(r), t: (r.outcome && r.outcome.at) || (r.bookedOutside && r.bookedOutside.at) || r.closedAt || r.updatedAt || 0 }; })
+    .filter(function (x) { return npr === 'all' || (x.r.createdAt || 0) > now - (+npr) * 864e5; }).sort(function (a, b) { return b.t - a.t; });
+  var np = dashPanel('Didn’t Go to Plan', npAll.length ? plural(npAll.length, 'request', 'requests') : '', npAll.length > 7 ? 'All' : '', function () { STATE.listShow = 'notplan'; lsSet('listShow', 'notplan'); go('list'); });
+  var nseg = seg([['30', 'Last 30 Days'], ['90', 'Last 90 Days'], ['all', 'All']], npr, function (v) { STATE.npRange = v; lsSet('npRange', v); render(); });
+  nseg.classList.add('pseg'); np.p.insertBefore(nseg, np.rows);
   np.p.id = 'dash-notplan'; np.p.style.scrollMarginTop = 'calc(var(--hq-h) + 16px)';
   npAll.slice(0, 7).forEach(function (x) {
     var r = x.r, O = r.outcome || {}, K = OUT_KIND[x.k];
@@ -3171,7 +3199,7 @@ var HELP = [
   { id: 'flow', k: '#5fd39a', t: 'How a Request Flows', h: function () { return '<h2>From Email to Booked Meeting</h2><p class="lead">Every request moves through the same stages. Its stage shows as the colored tag on the request.</p>' +
     '<table><thead><tr><th>Stage</th><th>What is happening</th><th>What you do</th></tr></thead><tbody>' +
     '<tr><td><b>Working on It</b></td><td>The Scheduler has read the email and is checking Outlook.</td><td>Nothing.</td></tr>' +
-    '<tr><td><b>Waiting on Replies</b></td><td>A poll is out. Times come off when someone at MISMO gets busy or a guest says no; when no time works for everyone, Vanessa and Jonna decide what happens next (book the closest time, make someone optional, or send new times). A guest marked optional doesn’t have to be free for a time to work. Guests who haven’t answered get a warm follow-up a week after the poll, then weekly, three at most; for a quick request (dates within the next week) it’s noon Eastern each following working day.</td><td>Nothing. It shows under Polls Out on the Dashboard.</td></tr>' +
+    '<tr><td><b>Waiting on Replies</b></td><td>A poll is out. Times come off when someone at MISMO gets busy or a guest says no; when no time works for everyone, Vanessa and Jonna decide what happens next (book the closest time, make someone optional, or send new times). A guest marked optional doesn’t have to be free for a time to work. Guests who haven’t answered get a warm follow-up three working days after the poll, then every three working days, three at most; for a quick request (dates within the next week) it’s noon Eastern each following working day.</td><td>Nothing. It shows under Polls Out on the Dashboard.</td></tr>' +
     '<tr><td><b>Waiting for Approval</b></td><td>A time works for everyone. It is held, so no other request can take it.</td><td>Approve it, or press Book under a different time.</td></tr>' +
     '<tr><td><b>Waiting on Replies, in Needs You</b></td><td>Everyone has answered and no time works for all of them. Nothing more goes out until you decide.</td><td>Book the closest time, make someone optional, or press Send New Times. See When No Time Works.</td></tr>' +
     '<tr><td><b>Booked</b></td><td>Everyone has the Outlook invitation with the Zoom room link.</td><td>Nothing. If the invitation couldn’t go by itself, Vanessa gets Booked, Send the Invite with a button that opens it in Outlook.</td></tr>' +
@@ -3183,9 +3211,9 @@ var HELP = [
     HELP_STEPS([['Open the Dashboard', 'The time waiting for approval is the first row under Needs You, with why it was picked.'], ['Approve', 'Press Approve on the row, or open the request and press Approve This Time. Only Vanessa and Jonna see the button.'], ['Or Pick Another Time', 'Open the request and press Book under any time in the grid. That approves that time instead, and works even while the poll is still out.'], ['It Sends Everything', 'Within a few minutes everyone gets an Outlook invitation from scheduling@mismo.org with the Zoom room link; that is their confirmation. Optional guests are invited as optional. Vanessa gets Booked and Invited, with Jonna copied.']]) +
     '<div class="hnote"><b>If Outlook changes before you approve</b> (someone books that time), the Scheduler lets the held time go and finds another. Nothing has gone to the guests, so there is nothing to take back.</div>'; } },
   { id: 'polls', k: '#a78bfa', t: 'Polls and Guests', h: function () { return '<h2>What Guests See</h2><p class="lead">Each guest gets an email from MISMO Scheduling with one button: <b>Choose the Times That Work</b>. The times are not listed in the email, so they are always current when the guest opens the link. It only says the meeting’s name, length and place; the notes on a request (what it’s about, who asked and why) stay inside MISMO.</p>' +
-    '<ul><li>The link opens a MISMO page with the meeting, its length and where it is. The guest ticks ✓ for times that work and ✗ for the ones that don’t, can add a note, and presses Send.</li><li>Times show in the guest’s own time zone, and they can switch it.</li><li>Each link belongs to one guest. It never shows other guests or their answers.</li><li>Guests can come back to the same link to change their answers until the meeting is booked.</li><li>If you send new times, or change the meeting’s length, guests who already answered get a short <b>New Times</b> email.</li><li>A guest who hasn’t answered gets three warm follow-ups, a week apart (or at noon Eastern each working day when the request is for the coming week). Stop them on the request with <b>Stop Follow-Ups</b>.</li><li>Press <b>Make optional</b> next to a guest under Outside guests when the meeting can go ahead without them. Press <b>Make required</b> to undo it.</li></ul>' +
+    '<ul><li>The link opens a MISMO page with the meeting, its length and where it is. The guest ticks ✓ for times that work and ✗ for the ones that don’t, can add a note, and presses Send.</li><li>Times show in the guest’s own time zone, and they can switch it.</li><li>Each link belongs to one guest. It never shows other guests or their answers.</li><li>Guests can come back to the same link to change their answers until the meeting is booked.</li><li>If you send new times, or change the meeting’s length, guests who already answered get a short <b>New Times</b> email.</li><li>A guest who hasn’t answered gets three warm follow-ups, three working days apart (or at noon Eastern each working day when the request is for the coming week). Stop them on the request with <b>Stop Follow-Ups</b>.</li><li>Press <b>Make optional</b> next to a guest under Outside guests when the meeting can go ahead without them. Press <b>Make required</b> to undo it.</li></ul>' +
     '<h3>When a Guest Replies by Email</h3><p class="lead">Their reply lands in scheduling@mismo.org and shows in the request’s history. While their poll is out, Claude reads it:</p><ul><li><b>They name times on the poll</b> (“Tuesday at 10 works”): it counts as their answer, just as if they’d used the link, and shows as <b>Answered (by email)</b>. If that gives a time that works for everyone, it’s held for your approval as usual.</li><li><b>They suggest a different time</b> (“could we do Thursday at 2?”): if everyone from MISMO is free (and the Zoom room), it’s held for your approval. With other guests on the poll, it’s added to the poll instead, and anyone who already answered is asked to look. If MISMO isn’t free, nothing changes and you’re told why (for example “Kelly Bradshaw is busy then”).</li><li><b>Anything vague</b> (“I’m flexible”, a question): nothing changes.</li></ul><p>Vanessa gets a <b>Reply About</b> email only when a person needs to do something: a time they suggested that MISMO can’t do, or a reply the Scheduler couldn’t act on. Answers it counted and times it added are in the request’s history, and a time held for approval has its own Approve email. Replies written by MISMO staff are only logged. Nothing goes to anyone outside MISMO until you or Vanessa approve. A reply about a meeting that’s already booked (for example Outlook’s <b>New Time Proposed</b>) also comes to Vanessa, since the invitation has to be moved by hand. To enter an answer yourself, open the request and press <b>Enter their answer</b> next to their name.</p>' +
-    '<h3>When a Guest Can’t Open Their Link</h3><p class="lead">Some company networks block the poll page, so the guest sees “couldn’t reach MISMO’s scheduling service”. Send them a <b>Times Form</b> instead:</p><ol><li>Open the request and press <b>Times Form</b> next to their name. A PDF downloads with the times still open on the poll (Eastern time), each with <b>Works</b> and <b>Can’t</b>, and a box for a note.</li><li>Attach it to an email to them (from scheduling@mismo.org or your own mailbox), and ask them to fill it in, save it and email it back to scheduling@mismo.org.</li><li>When it comes back, the Scheduler reads it and counts it as their answer, exactly as if they’d used their link. It shows as <b>Answered (Times Form)</b>, and a time that works for everyone is held for your approval as usual.</li></ol><p>Each form belongs to one guest (it carries their private reference), so make one per person. If a time on it has filled up since, it’s simply left out. They can also just reply with the days and times that work, which the Scheduler reads too.</p><p><b>Sending a follow-up yourself.</b> On an automatic request, <b>Send a Follow-Up Now</b> next to a guest who hasn’t answered sends them the Scheduler’s follow-up from scheduling@ straight away, for example when an earlier one was lost in an email outage. It doesn’t change when the regular weekly follow-ups go. If email itself is down, the Scheduler keeps trying every hour for two days before telling Vanessa.</p>'; } },
+    '<h3>When a Guest Can’t Open Their Link</h3><p class="lead">Some company networks block the poll page, so the guest sees “couldn’t reach MISMO’s scheduling service”. Send them a <b>Times Form</b> instead:</p><ol><li>Open the request and press <b>Times Form</b> next to their name. A PDF downloads with the times still open on the poll (Eastern time), each with <b>Works</b> and <b>Can’t</b>, and a box for a note.</li><li>Attach it to an email to them (from scheduling@mismo.org or your own mailbox), and ask them to fill it in, save it and email it back to scheduling@mismo.org.</li><li>When it comes back, the Scheduler reads it and counts it as their answer, exactly as if they’d used their link. It shows as <b>Answered (Times Form)</b>, and a time that works for everyone is held for your approval as usual.</li></ol><p>Each form belongs to one guest (it carries their private reference), so make one per person. If a time on it has filled up since, it’s simply left out. They can also just reply with the days and times that work, which the Scheduler reads too.</p><p><b>Sending a follow-up yourself.</b> On an automatic request, <b>Send a Follow-Up Now</b> next to a guest who hasn’t answered sends them the Scheduler’s follow-up from scheduling@ straight away, for example when an earlier one was lost in an email outage. It doesn’t change when the regular follow-ups go. If email itself is down, the Scheduler keeps trying every hour for two days before telling Vanessa.</p>'; } },
   { id: 'decide', k: '#eb6834', t: 'When No Time Works', h: function () { return '<h2>When No Time Works for Everyone</h2><p class="lead">Once guests have answered and no time on the poll works for all of them, the Scheduler stops and asks. It never sends a second poll on its own. Vanessa gets a <b>No Time Works Yet</b> email, with Jonna copied, listing the closest times and who can make each, and the request shows in <b>Needs You</b>.</p>' +
     '<table><thead><tr><th>You want to</th><th>Do this</th><th>What happens</th></tr></thead><tbody>' +
     '<tr><td>Go with the closest time</td><td>Open the request and press <b>Book</b> under that time.</td><td>Booked straight away. Everyone gets the invitation.</td></tr>' +
@@ -3199,8 +3227,8 @@ var HELP = [
     '<tr><td><b>Needs You</b></td><td>Shows at the top only when something is waiting: times to approve, polls where no time works (your call), polls whose three follow-ups went unanswered, requests the Scheduler stopped on, people to follow up with on requests run by hand, and any email it couldn’t place on a request.</td></tr>' +
     '<tr><td><b>Polls Out</b></td><td>Every poll waiting on guests: who has answered, how many times are on offer, and which follow-up they’re on.</td></tr>' +
     '<tr><td><b>Booked This Week</b></td><td>Meetings booked in the last seven days, automatic and by hand.</td></tr>' +
-    '<tr><td><b>Scheduled</b></td><td>Every meeting booked through the Scheduler that’s still ahead, soonest first. This week’s are marked green. Past ones are under All Requests, Past.</td></tr>' +
-    '<tr><td><b>Didn’t Go to Plan</b></td><td>Requests the Scheduler didn’t book itself: scheduled outside the system, cancelled, or couldn’t schedule, newest first, each with the reason. One without a reason has an <b>Add Why</b> button: say why, and whether it was about how the Scheduler handled it or outside its control. The Scheduler has Claude group the reasons, and Statistics shows them under <b>What to Learn From</b>.</td></tr>' +
+    '<tr><td><b>Scheduled</b></td><td>Meetings the Scheduler booked. <b>Upcoming</b> shows those still ahead, soonest first (this week’s in green); <b>Last 30 Days</b>, <b>Last 90 Days</b> and <b>All</b> show the ones already held too, newest first.</td></tr>' +
+    '<tr><td><b>Didn’t Go to Plan</b></td><td>Requests the Scheduler didn’t book itself: scheduled outside the system, cancelled, or couldn’t schedule, newest first, each with the reason. Pick Last 30 Days, Last 90 Days or All at the top. One without a reason has an <b>Add Why</b> button: say why, and whether it was about how the Scheduler handled it or outside its control. The Scheduler has Claude group the reasons, and Statistics shows them under <b>What to Learn From</b>.</td></tr>' +
     '<tr><td><b>Latest Activity</b></td><td>Everything the Scheduler and the team did, newest first.</td></tr></tbody></table>' +
     '<div class="hnote"><b>Search</b> is at the top of the menu on the left. Type a person’s name or email, a company, a subject line, a MISMO teammate, or a word like booked or couldn’t; type two words to narrow it down (for example <i>kelly booked</i>). It finds requests, outside guests and the emails that came in.</div>'; } },
   { id: 'stats', k: '#2477b8', t: 'Statistics', h: function () { return '<h2>Statistics</h2><p class="lead">The Statistics tab on the left shows how scheduling is going. Pick Last 30 Days, Last 90 Days, This Year or All Time at the top; everything counts the requests started in that period. Hover over any bar for its number.</p>' +
@@ -3222,7 +3250,7 @@ var HELP = [
     '<tr><td><b>Poll Sent / New Times Sent: …</b></td><td>The person who asked</td><td>One email listing who the poll (or a set of new times) went to, instead of a copy of every guest’s email.</td></tr>' +
     '<tr><td><b>No Time Works Yet</b></td><td>Vanessa, Jonna copied</td><td>When everyone has answered and no time works for all of them. It lists the closest times. The Scheduler never sends a second set on its own: you Book a time, make someone optional, or press Send New Times.</td></tr>' +
     '<tr><td><b>New Times for …</b></td><td>Guests who already answered</td><td>Only when you press Send New Times (or change the meeting’s length).</td></tr>' +
-    '<tr><td><b>Following Up / Still Hoping / One Last Note</b></td><td>A guest who hasn’t answered</td><td>Three warm follow-ups: a week after the poll, then a week apart. For a quick request (the email asks for dates within the next week, like “Monday”), they go at noon Eastern on each following working day instead. They stop when the guest answers, the meeting is booked, or you press Stop Follow-Ups.</td></tr>' +
+    '<tr><td><b>Following Up / Still Hoping / One Last Note</b></td><td>A guest who hasn’t answered</td><td>Three warm follow-ups: three working days after the poll, then three working days apart. For a quick request (the email asks for dates within the next week, like “Monday”), they go at noon Eastern on each following working day instead. They stop when the guest answers, the meeting is booked, or you press Stop Follow-Ups.</td></tr>' +
     '<tr><td><b>Follow-Ups Finished</b></td><td>Vanessa, Jonna copied</td><td>When the third follow-up goes with no answer. Start them again for three more, leave them stopped, or close the request as Couldn’t Schedule.</td></tr>' +
     '<tr><td><b>Approve a Time</b></td><td>Vanessa, Jonna copied</td><td>When a time works for everyone.</td></tr>' +
     '<tr><td><b>Confirmed: … on …</b></td><td>The guests and the person who asked, MISMO attendees copied</td><td>Only if the calendar invitation couldn’t go by itself. Normally the invitation is the confirmation, so no separate email goes out.</td></tr>' +
