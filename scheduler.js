@@ -1512,7 +1512,7 @@ function howItRuns() {
   var f = el('div', 'flow');
   [['We Hear Back Right Away', 'The person who asked gets a branded email saying we have their request and are working on it.'],
    ['Their Times Come First', 'If everyone from MISMO is free at a time they suggested, it’s held and Vanessa or Jonna approves it before anyone is told.'],
-   ['Otherwise a Poll', 'Guests get their own link to the times everyone at MISMO is free, with the person who asked copied.'],
+   ['Otherwise a Poll', 'Guests get their own link to the times everyone at MISMO is free. The person who asked gets one email saying who it went to.'],
    ['The Poll Keeps Itself Current', 'Times come off when Outlook changes or a guest says no, new ones are added, and a time that works for everyone goes to Vanessa or Jonna to approve.']
   ].forEach(function (x, i) { f.appendChild(el('div', null, '<span class="step">' + (i + 1) + '</span><h3>' + esc(x[0]) + '</h3><p>' + esc(x[1]) + '</p>')); });
   return f;
@@ -3098,7 +3098,7 @@ var HELP = [
   { id: 'overview', k: '#74bfeb', t: 'Overview', h: function () { return '<h2>What the Scheduler Does</h2><p class="lead">The Scheduler finds a meeting time that works for people inside and outside MISMO, like Doodle but on its own. Anyone can email a request to <b>scheduling@mismo.org</b>. The Scheduler reads it, checks everyone’s Outlook, offers times, keeps the poll current and books the meeting. You and Vanessa only step in to approve a time or when something needs a person.</p>' +
     HELP_STEPS([['An Email Comes In', 'Someone emails scheduling@mismo.org, or forwards a request there. Within about five minutes the Scheduler reads it with Claude: who should meet, for how long, and any times they suggested.'],
       ['Their Times Come First', 'If everyone from MISMO is free at a time they suggested, and nobody else has to agree, that time is held for approval.'],
-      ['Otherwise a Poll', 'Each outside guest gets their own link to the times when everyone at MISMO is free. The person who asked is copied.'],
+      ['Otherwise a Poll', 'Each outside guest gets their own link to the times when everyone at MISMO is free. The person who asked gets one Poll Sent email listing who it went to, not a copy of each poll.'],
       ['You Approve, It Books', 'When a time works for everyone, you or Vanessa approve it on the Dashboard. Within minutes everyone gets an Outlook invitation from scheduling@mismo.org with the MISMO Zoom room link. The invitation is the confirmation. Nothing to send by hand.']]) +
     '<div class="hnote"><b>Nothing goes to anyone outside MISMO as “booked” until you or Vanessa approve it.</b> Meetings with MISMO people only are booked straight away, because there is nobody outside to tell. And when no time works for everyone, the Scheduler asks you what to do instead of sending a second poll.</div>' +
     '<h3>Who Uses It</h3><ul><li><b>Vanessa</b> looks after scheduling day to day: she approves times, decides what happens when no time works, and gets the Needs a Look emails.</li><li><b>Jonna</b> can approve too, and is copied on the emails that need a person: approvals, No Time Works Yet, Needs a Look, Follow-Ups Finished, anything that failed, and health alerts.</li><li><b>Everyone on the team</b> can open the Scheduler, see every request and run one by hand. Access is set in People &amp; Access, like every other tool.</li></ul>'; } },
@@ -3156,7 +3156,8 @@ var HELP = [
   { id: 'emails', k: '#5fd39a', t: 'Emails It Sends', h: function () { return '<h2>Every Email, Who Gets It and When</h2><p class="lead">All of them come from <b>MISMO Scheduling</b> (scheduling@mismo.org) in the MISMO email frame. Replies come back to scheduling@mismo.org.</p>' +
     '<table><thead><tr><th>Email</th><th>Goes to</th><th>When</th></tr></thead><tbody>' +
     '<tr><td><b>We’re Working on Your Meeting Request</b></td><td>The person who asked</td><td>Only when nothing else reaches them straight away, for example while a time waits for approval.</td></tr>' +
-    '<tr><td><b>Finding a Time for …</b></td><td>Each outside guest, the person who asked copied</td><td>When a poll goes out.</td></tr>' +
+    '<tr><td><b>Finding a Time for …</b></td><td>Each outside guest</td><td>When a poll goes out. Nobody is copied.</td></tr>' +
+    '<tr><td><b>Poll Sent / New Times Sent: …</b></td><td>The person who asked</td><td>One email listing who the poll (or a set of new times) went to, instead of a copy of every guest’s email.</td></tr>' +
     '<tr><td><b>No Time Works Yet</b></td><td>Vanessa, Jonna copied</td><td>When everyone has answered and no time works for all of them. It lists the closest times. The Scheduler never sends a second set on its own: you Book a time, make someone optional, or press Send New Times.</td></tr>' +
     '<tr><td><b>New Times for …</b></td><td>Guests who already answered</td><td>Only when you press Send New Times (or change the meeting’s length).</td></tr>' +
     '<tr><td><b>Following Up / Still Hoping / One Last Note</b></td><td>A guest who hasn’t answered</td><td>Three warm follow-ups: a week after the poll, then a week apart. For a quick request (the email asks for dates within the next week, like “Monday”), they go at noon Eastern on each following working day instead. They stop when the guest answers, the meeting is booked, or you press Stop Follow-Ups.</td></tr>' +
