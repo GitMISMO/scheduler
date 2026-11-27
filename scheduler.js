@@ -808,7 +808,7 @@ function sendPollOk(req) {
 /* a guest asked to move a booked meeting and MISMO is free: waiting for Vanessa or Jonna (robot/logic.mjs) */
 function awaitingMove(req) { var R = req.robot || {}; return !!(R.auto && req.status === 'booked' && R.proposedMove && R.proposedMove.s); }
 function approveMove(req) {
-  if (!canApprove()) { toast('Only Vanessa or Jonna can approve a move.'); return; }
+  if (!canDecide(req)) { toast('Only the person who asked, Vanessa or Jonna can approve a move.'); return; }
   var P = req.robot.proposedMove;
   if (!confirm('Move “' + (req.title || 'this meeting') + '” to ' + slotLabel(P, VIEW_TZ, true) + '?\n\nEveryone gets Outlook’s cancellation for the old time and a new invitation from scheduling@mismo.org.')) return;
   var r = clone(req); r.robotEdit = { moveTo: { s: P.s, e: P.e, by: me().name, at: Date.now() }, proposedMove: null };
@@ -857,12 +857,22 @@ function cancelMeeting(req) {
   var r = clone(req); r.robotEdit = { cancelMeeting: { by: me().name, at: Date.now(), note: String(note || '').slice(0, 300) } };
   put(r, 'Cancelled the meeting'); toast('Cancelling. Everyone gets Outlook’s cancellation within a few minutes.');
 }
-function needsYou(req) { return needsLook(req) || awaitingApproval(req) || followsFinished(req) || awaitingDecision(req) || awaitingPollCheck(req) || awaitingMove(req); }
+/* Who chooses (Jonna, Nov 27): when someone at MISMO asked for the meeting, the choices (book a
+   time, new times, go ahead without someone, follow up again, a guest's move) are theirs; they get
+   them by email with buttons (robot/logic.mjs toDecider). Vanessa and Jonna are the backup: after
+   two business days without a choice it comes to them (robot.askedAsker.escalatedAt). */
+function waitingOnAsker(req) { var A = req && req.robot && req.robot.askedAsker; return !!(A && !A.escalatedAt && req.status !== 'cancelled'); }
+function askerName(req) { var q = (req.robot || {}).requester || {}; return q.name || q.email || 'the person who asked'; }
+function isAsker(req) { var q = (req.robot || {}).requester || {}; return !!(q.email && me().email && avKey(q.email) === avKey(me().email)); }
+function canDecide(req) { return canApprove() || (canEdit() && isAsker(req)); }
+function askBackupDay(req) { var A = (req.robot || {}).askedAsker; return A ? fmtDay(afterWorkdays(A.at, 2), VIEW_TZ) : ''; }
+var ASK_WHAT = { approve: 'book the time', decide: 'choose what to do (no time works yet)', followdone: 'choose what to do (a guest hasn’t answered)', move: 'approve a guest’s move' };
+function needsYou(req) { if (waitingOnAsker(req) && !needsLook(req) && !awaitingPollCheck(req)) return false; return needsLook(req) || awaitingApproval(req) || followsFinished(req) || awaitingDecision(req) || awaitingPollCheck(req) || awaitingMove(req); }
 /* Vanessa or Jonna approve a time before anyone outside MISMO is told it's booked */
 var APPROVERS = ['vrios', 'jcritchley'];
 function canApprove() { return PREVIEW || (canEdit() && APPROVERS.indexOf(avKey(me().email)) >= 0); }
 function approveSlot(req, sl) {
-  if (!canApprove()) { toast('Only Vanessa or Jonna can approve a time.'); return; }
+  if (!canDecide(req)) { toast('Only the person who asked, Vanessa or Jonna can book a time.'); return; }
   var r = clone(req); r.robotEdit = { approved: { id: sl.id, by: me().name, at: Date.now() } };
   if (!(r.slots || []).some(function (x) { return x.id === sl.id; })) r.slots = (r.slots || []).concat({ id: sl.id, s: sl.s, e: sl.e, added: Date.now() });
   put(r, 'Approved ' + slotLabel(sl, ET, true));
@@ -1427,7 +1437,7 @@ function viewFollow(app) {
       var ap = awaitingApproval(r);
       c.innerHTML = '<div class="who"><b>' + esc(r.title || 'Meeting request') + '</b><span>' + esc(ap ? 'Approve ' + slotLabel(r.robot.proposed, VIEW_TZ, true) + ' (' + (r.robot.proposed.how || '') + ')' : 'Stopped because ' + (r.robot.why || 'it needs a person')) + '</span></div>';
       var a = el('div', 'acts');
-      if (ap && canApprove()) a.appendChild(btn('Approve', 'sm', function () { approveSlot(r, r.robot.proposed); }, 'check'));
+      if (ap && canDecide(r)) a.appendChild(btn('Approve', 'sm', function () { approveSlot(r, r.robot.proposed); }, 'check'));
       a.appendChild(btn('Open', ap ? 'sm ghost' : 'sm', function () { go(null, r.id); })); c.appendChild(a); lL0.appendChild(c);
     });
     app.appendChild(pL0);
@@ -1757,7 +1767,12 @@ function standing(req) {
     var sl = bookedSlot(req), inv = R.invite || {};
     return { t: 'ok', h: sl ? (isPast(req) ? 'Met ' : 'Booked for ') + slotLabel(sl, VIEW_TZ, true) : 'Booked', d: [inv.state === 'sent' ? 'Everyone has the Outlook invitation from scheduling@mismo.org.' : inv.state === 'failed' ? 'The invitation couldn’t go out by itself: send it with the button below.' : inv.state ? 'The invitation goes out within a few minutes.' : 'Send the invitation from Outlook (buttons below).'] };
   }
-  if (awaitingApproval(req)) return { t: 'act', h: 'A Time Works: ' + slotLabel(R.proposed, VIEW_TZ, true), d: ['Waiting for you or Vanessa to approve it. Nobody outside MISMO has been told yet.', R.proposed.how ? 'Why this time: ' + R.proposed.how + '.' : ''] };
+  if (waitingOnAsker(req) && !needsLook(req)) {
+    var Ak = R.askedAsker.kind, nm0 = askerName(req);
+    return { t: 'info', h: (Ak === 'approve' ? 'A Time Works: ' + slotLabel(R.proposed, VIEW_TZ, true) : Ak === 'decide' ? 'No Time Works for Everyone Yet' : Ak === 'followdone' ? 'Follow-Ups Finished' : 'A Guest Asked to Move It'),
+      d: ['Waiting on ' + nm0 + ' to ' + (ASK_WHAT[Ak] || 'choose') + '. They were emailed ' + fmtDay(R.askedAsker.at, VIEW_TZ) + (R.askedAsker.remindedAt ? ' and reminded ' + fmtDay(R.askedAsker.remindedAt, VIEW_TZ) : '') + '.', 'If they haven’t chosen by ' + askBackupDay(req) + ', it comes to you and Vanessa. You can step in any time.'] };
+  }
+  if (awaitingApproval(req)) return { t: 'act', h: 'A Time Works: ' + slotLabel(R.proposed, VIEW_TZ, true), d: [(R.askedAsker && R.askedAsker.escalatedAt ? askerName(req) + ' didn’t choose in two business days, so it’s with you and Vanessa. ' : 'Waiting for you or Vanessa to approve it. ') + 'Nobody outside MISMO has been told yet.', R.proposed.how ? 'Why this time: ' + R.proposed.how + '.' : ''] };
   if (awaitingPollCheck(req)) return { t: 'act', h: 'Poll Ready to Check', d: ['Nobody has been emailed yet. Look at the times below, then press Send the Poll.'] };
   if (awaitingDecision(req)) return { t: 'act', h: 'No Time Works for Everyone Yet', d: [ans.length + ' of ' + gs.length + ' answered.', 'Your call: book the best time in the grid, make someone optional, or send new times.'] };
   if (needsLook(req)) return { t: 'act', h: 'Stopped: Needs a Person', d: ['The Scheduler stopped because ' + (R.why || 'it needs a person') + '.'] };
@@ -1856,7 +1871,7 @@ function viewDetail(app, req) {
     if (awaitingMove(req)) {
       var PM = req.robot.proposedMove;
       var mvn = el('div', 'notice warn', '<b>' + esc(PM.from || 'A guest') + ' asked to move it to ' + esc(slotLabel(PM, VIEW_TZ, true)) + '.</b> Everyone from MISMO is free then. Nothing has changed for anyone yet.' + (PM.note ? '<br><span class="small muted">“' + esc(PM.note) + '”</span>' : '') + ' ');
-      if (canApprove()) { var mva = el('button', 'linkbtn', 'Approve the Move'); mva.type = 'button'; mva.onclick = function () { approveMove(req); }; mvn.appendChild(mva); mvn.appendChild(document.createTextNode(' · ')); var mvk = el('button', 'linkbtn', 'Keep the Current Time'); mvk.type = 'button'; mvk.onclick = function () { keepTime(req); }; mvn.appendChild(mvk); }
+      if (canDecide(req)) { var mva = el('button', 'linkbtn', 'Approve the Move'); mva.type = 'button'; mva.onclick = function () { approveMove(req); }; mvn.appendChild(mva); mvn.appendChild(document.createTextNode(' · ')); var mvk = el('button', 'linkbtn', 'Keep the Current Time'); mvk.type = 'button'; mvk.onclick = function () { keepTime(req); }; mvn.appendChild(mvk); }
       $('div', bk).appendChild(mvn);
     }
     if (editable && req.robot && req.robot.auto) {
@@ -1994,7 +2009,7 @@ function robotPanel(req, editable) {
     apb.innerHTML = '<div style="flex:1 1 280px"><div class="small muted">Waiting for approval · ' + esc(P.how || '') + '</div><div class="when">' + esc(slotLabel(P, VIEW_TZ, true)) + '</div>' +
       (VIEW_TZ !== ET ? '<div class="small muted">' + esc(slotLabel(P, ET, true)) + '</div>' : '') + '<div class="small muted">Nothing has gone to anyone outside MISMO yet. To use a different time, press <b>Book</b> under it in the grid below.</div></div>';
     var apa = el('div', 'grow-row');
-    if (canApprove()) apa.appendChild(btn('Approve This Time', '', function () { approveSlot(req, P); }, 'check'));
+    if (canDecide(req)) apa.appendChild(btn('Approve This Time', '', function () { approveSlot(req, P); }, 'check'));
     else apa.appendChild(el('span', 'small muted', 'Vanessa or Jonna approves this.'));
     apb.appendChild(apa); b.appendChild(apb);
   }
@@ -3004,7 +3019,9 @@ function plural(n, a, b) { return n + ' ' + (n === 1 ? a : b); }
 function shortAgo(t) { var m = Math.round((Date.now() - t) / 60000); if (m < 1) return 'just now'; if (m < 60) return m + ' min ago'; var h = Math.round(m / 60); if (h < 24) return h + (h === 1 ? ' hour ago' : ' hours ago'); return new Date(t).toLocaleDateString('en-US', { timeZone: VIEW_TZ, month: 'short', day: 'numeric' }); }
 function viewDash(app) {
   var now = Date.now(), all = allReqs(), weekAgo = now - 7 * 864e5;
-  var approvals = all.filter(awaitingApproval), looks = all.filter(function (r) { return needsLook(r) || followsFinished(r) || awaitingDecision(r) || awaitingPollCheck(r) || awaitingMove(r); }), due = followList(true).filter(function (x) { return x.st === 'due'; });
+  var mine = function (r) { return !waitingOnAsker(r) || needsLook(r) || awaitingPollCheck(r); };
+  var approvals = all.filter(function (r) { return awaitingApproval(r) && mine(r); }), looks = all.filter(function (r) { return mine(r) && (needsLook(r) || followsFinished(r) || awaitingDecision(r) || awaitingPollCheck(r) || awaitingMove(r)); }), due = followList(true).filter(function (x) { return x.st === 'due'; });
+  var askers = all.filter(function (r) { return waitingOnAsker(r) && !needsLook(r) && !awaitingPollCheck(r); });
   var open = all.filter(function (r) { var ph = phase(r); return ph !== 'booked' && ph !== 'cancelled'; });
   var polls = open.filter(function (r) { var ph = phase(r); return ph === 'collecting' || ph === 'ready'; });
   var booked = all.filter(function (r) { return r.status === 'booked'; });
@@ -3111,6 +3128,17 @@ function viewDash(app) {
   /* only when something is waiting: the four sections below are the Dashboard's own */
   if (needN) L.appendChild(nd.p);
 
+  /* ---- Waiting on the Person Who Asked: their choice for two business days, then it comes to Needs You ---- */
+  if (askers.length) {
+    var wa = dashPanel('Waiting on the Person Who Asked', 'comes to you if they don’t choose', '', null);
+    askers.forEach(function (r) {
+      var A = r.robot.askedAsker, acts = [];
+      if (A.kind === 'approve' && r.robot.proposed && canApprove()) acts.push(btn('Approve', 'sm ghost', function () { approveSlot(r, r.robot.proposed); }, 'check'));
+      wa.rows.appendChild(dashRow({ k: '#74bfeb', nm: r.title || 'Meeting request', small: askerName(r) + ' to ' + (ASK_WHAT[A.kind] || 'choose') + (A.kind === 'approve' && r.robot.proposed ? ': ' + slotLabel(r.robot.proposed, VIEW_TZ, true) : ''), wh: 'Asked ' + shortAgo(A.at) + (A.remindedAt ? ' · reminded' : ''), age: 'To you ' + askBackupDay(r), ageCls: 'sky', acts: acts, go: function () { go(null, r.id); } }));
+    });
+    L.appendChild(wa.p);
+  }
+
   /* ---- Polls Out ---- */
   var pl = dashPanel('Polls Out', polls.length ? 'newest first' : '', 'All Requests', function () { STATE.listShow = 'active'; go('list'); });
   polls.slice().sort(function (a, b) { return (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0); }).slice(0, 6).forEach(function (r) {
@@ -3198,7 +3226,7 @@ var HELP = [
       ['Their Times Come First', 'If everyone from MISMO is free at a time they suggested, and nobody else has to agree, that time is held for approval.'],
       ['Otherwise a Poll', 'Each outside guest gets their own link to the times when everyone at MISMO is free. The person who asked gets one Poll Sent email listing who it went to, not a copy of each poll.'],
       ['You Approve, It Books', 'When a time works for everyone, you or Vanessa approve it on the Dashboard. Within minutes everyone gets an Outlook invitation from scheduling@mismo.org with the MISMO Zoom room link. The invitation is the confirmation. Nothing to send by hand.']]) +
-    '<div class="hnote"><b>Nothing goes to anyone outside MISMO as “booked” until you or Vanessa approve it.</b> Meetings with MISMO people only are booked straight away, because there is nobody outside to tell. And when no time works for everyone, the Scheduler asks you what to do instead of sending a second poll.</div>' +
+    '<div class="hnote"><b>Nothing goes to anyone outside MISMO as “booked” until someone chooses it.</b> When someone at MISMO asked for the meeting, that’s them: they get each choice by email with buttons (Book It, Send New Times, Go Ahead Without someone, Follow Up Again, Move It). If they haven’t chosen after one business day they get a reminder, and after two business days it comes to you and Vanessa. When someone outside MISMO asked, you or Vanessa choose. Meetings with MISMO people only are booked straight away, because there is nobody outside to tell.</div>' +
     '<h3>Who Uses It</h3><ul><li><b>Vanessa</b> looks after scheduling day to day: she approves times, decides what happens when no time works, and gets the Needs a Look emails.</li><li><b>Jonna</b> can approve too, and is copied on the emails that need a person: approvals, No Time Works Yet, Needs a Look, Follow-Ups Finished, anything that failed, and health alerts.</li><li><b>Everyone on the team</b> can open the Scheduler, see every request and run one by hand. Access is set in People &amp; Access, like every other tool.</li></ul>'; } },
   { id: 'flow', k: '#5fd39a', t: 'How a Request Flows', h: function () { return '<h2>From Email to Booked Meeting</h2><p class="lead">Every request moves through the same stages. Its stage shows as the colored tag on the request.</p>' +
     '<table><thead><tr><th>Stage</th><th>What is happening</th><th>What you do</th></tr></thead><tbody>' +
@@ -3211,7 +3239,7 @@ var HELP = [
     '<tr><td><b>Couldn’t Schedule</b></td><td>Closed after we tried and no time could be found. Kept on the Dashboard for reference.</td><td>Bring it back from the request to try again.</td></tr>' +
     '<tr><td><b>Cancelled</b></td><td>Stopped for good.</td><td>Bring it back from the request if needed.</td></tr></tbody></table>' +
     '<h3>Rules It Follows</h3><ul><li>Times are offered 9:00 AM to 5:00 PM Eastern, on working days only. Fridays between Memorial Day and Labor Day end at 1:00 PM.</li><li>MISMO holidays are never offered: MLK Day, Presidents’ Day, Memorial Day, Juneteenth, Independence Day, Labor Day, Veterans Day, Thanksgiving and the day after, and Winter Break.</li><li>A poll offers up to six times spread over the coming working days, one a day first and never more than two a day, starting the next working day.</li><li>If the email limits the dates (for example “the week of the 16th”), every time on the poll is inside them. Times someone suggests for themselves (“Thursday 1–3 works”) are tried first, and if they don’t work the poll offers other times.</li><li>Tentative in Outlook counts as busy when offering new times.</li><li>If Outlook information is missing or more than six hours old, nothing is decided until it is fresh. If it stays missing for a working day, Vanessa is told.</li><li>Once people have answered, the Scheduler never sends a second set of times on its own: Vanessa or Jonna decide. (If nobody has answered and the times simply run out, it refreshes them.)</li><li>If someone outside MISMO asks for a meeting that includes other outside people (anyone not at their own organization, or anyone at all when they write from a personal address like Gmail), nobody is emailed until Vanessa or Jonna check it and press <b>Send the Poll</b>. This stops anyone using the scheduling mailbox to email strangers. Requests from MISMO staff are never held, unless Vanessa or Jonna ask to see the poll first: then its times show on the request, kept current, until one of them presses <b>Send the Poll</b>.</li><li>A guest marked optional doesn’t have to be free for a time to work, and is invited as optional.</li><li><b>Group polls</b> (three or more outside guests who have to be there): one person’s “can’t” doesn’t take a time off. Once everyone has answered, or the follow-ups are finished, the time the most people can make is held for you or Vanessa to approve, as long as at least half of them can make it. If no time suits half of them, you’re asked what to do.</li><li>If someone from MISMO is out of office for all the days asked for (or the coming week, when no days are named), the Scheduler doesn’t wait for them: it goes ahead with the others and invites them as optional. It never does this for the person who asked, or when they’re the only one from MISMO on the meeting.</li><li>Meetings can be any length. The length comes from the email (for example “an hour”) or from Edit details; changing it while a poll is out swaps in fresh times at the new length.</li><li>Zoom meetings use a MISMO Zoom room: membership meetings (a name or purpose that says membership) use the membership room (membership@mismo.org, 501 516 3748); everything else uses the main MISMO room (info@mismo.org, 282 517 5426). Two Scheduler meetings never share a room at the same time, and each room keeps clear of its own account’s calendar. The main room also keeps clear of the workgroup meetings on the Meeting Trackers schedule.</li></ul>'; } },
-  { id: 'approve', k: '#ff8f7d', t: 'Approving a Time', h: function () { return '<h2>Approving a Time</h2><p class="lead">When the Scheduler finds a time that works for everyone, Vanessa gets an <b>Approve a Time</b> email with Jonna copied, and the request appears at the top of <b>Needs You</b> on the Dashboard.</p>' +
+  { id: 'approve', k: '#ff8f7d', t: 'Approving a Time', h: function () { return '<h2>Approving a Time</h2><p class="lead">When the Scheduler finds a time that works for everyone, the person who asked chooses if they’re at MISMO: they get <b>A Time Works</b> with a <b>Book It</b> button, and the request shows on the Dashboard under <b>Waiting on the Person Who Asked</b>. If they haven’t booked it after two business days, or when someone outside MISMO asked, Vanessa gets an <b>Approve a Time</b> email with Jonna copied, and the request appears at the top of <b>Needs You</b>.</p>' +
     HELP_STEPS([['Open the Dashboard', 'The time waiting for approval is the first row under Needs You, with why it was picked.'], ['Approve', 'Press Approve on the row, or open the request and press Approve This Time. Only Vanessa and Jonna see the button.'], ['Or Pick Another Time', 'Open the request and press Book under any time in the grid. That approves that time instead, and works even while the poll is still out.'], ['It Sends Everything', 'Within a few minutes everyone gets an Outlook invitation from scheduling@mismo.org with the Zoom room link; that is their confirmation. Optional guests are invited as optional. Vanessa gets Booked and Invited, with Jonna copied.']]) +
     '<div class="hnote"><b>If Outlook changes before you approve</b> (someone books that time), the Scheduler lets the held time go and finds another. Nothing has gone to the guests, so there is nothing to take back.</div>'; } },
   { id: 'polls', k: '#a78bfa', t: 'Polls and Guests', h: function () { return '<h2>What Guests See</h2><p class="lead">Each guest gets an email from MISMO Scheduling with one button: <b>Choose the Times That Work</b>. The times are not listed in the email, so they are always current when the guest opens the link. It only says the meeting’s name, length and place; the notes on a request (what it’s about, who asked and why) stay inside MISMO.</p>' +
@@ -3256,7 +3284,8 @@ var HELP = [
     '<tr><td><b>New Times for …</b></td><td>Guests who already answered</td><td>Only when you press Send New Times (or change the meeting’s length).</td></tr>' +
     '<tr><td><b>Following Up / Still Hoping / One Last Note</b></td><td>A guest who hasn’t answered</td><td>Three warm follow-ups: three working days after the poll, then three working days apart. For a quick request (the email asks for dates within the next week, like “Monday”), they go at noon Eastern on each following working day instead. They stop when the guest answers, the meeting is booked, or you press Stop Follow-Ups.</td></tr>' +
     '<tr><td><b>Follow-Ups Finished</b></td><td>Vanessa, Jonna copied</td><td>When the third follow-up goes with no answer. Start them again for three more, leave them stopped, or close the request as Couldn’t Schedule.</td></tr>' +
-    '<tr><td><b>Approve a Time</b></td><td>Vanessa, Jonna copied</td><td>When a time works for everyone.</td></tr>' +
+    '<tr><td><b>A Time Works / No Time Works Yet / No Answer Yet / Move …?</b></td><td>The person who asked, when they’re at MISMO</td><td>Their choices, as buttons that send a short email back (Book It, Send New Times, Go Ahead Without someone, Follow Up Again, Move It, Keep the Current Time, Cancel This Request). A reminder after one business day if they haven’t chosen.</td></tr>' +
+    '<tr><td><b>Approve a Time</b></td><td>Vanessa, Jonna copied</td><td>When a time works for everyone and someone outside MISMO asked, or the person at MISMO who asked hasn’t chosen in two business days. The same goes for No Time Works Yet, Follow-Ups Finished and Approve a New Time.</td></tr>' +
     '<tr><td><b>Confirmed: … on …</b></td><td>The guests and the person who asked, MISMO attendees copied</td><td>Only if the calendar invitation couldn’t go by itself. Normally the invitation is the confirmation, so no separate email goes out.</td></tr>' +
     '<tr><td><b>Calendar Invitation</b></td><td>Everyone in the meeting</td><td>Once a time is approved: an Outlook invitation from scheduling@mismo.org with a MISMO Zoom room link (the membership room for membership meetings, otherwise info@mismo.org’s room). Guests can join any time. The Scheduler never books two meetings in the same room at once, or over that room account’s own meetings, since a room holds one meeting at a time.</td></tr>' +
     '<tr><td><b>Booked and Invited</b></td><td>Vanessa</td><td>Once the invitation has gone, only when the Scheduler booked it on its own (MISMO-only meetings). Not after you or Vanessa approve, set or move a time yourselves: that’s in the history. If the invitation can’t go by itself, Vanessa gets <b>Booked, Send the Invite</b> instead (Jonna copied), with a button that opens it in Outlook.</td></tr>' +
