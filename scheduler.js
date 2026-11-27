@@ -1062,7 +1062,8 @@ function closeDialog(req, preset, editOnly) {
   var b = D.body;
   var kinds = [['outside', 'Scheduled Outside the System', 'Someone set the meeting up themselves, for example their own Outlook invitation.'],
     ['cancelled', 'Cancelled', 'The meeting isn’t being scheduled any more.'],
-    ['unscheduled', 'Couldn’t Schedule', 'We tried, and no time worked.']].concat(editOnly ? [] : [['duplicate', 'It’s a Duplicate', 'Another request is for the same meeting. Left out of Statistics.']]);
+    ['unscheduled', 'Couldn’t Schedule', 'We tried, and no time worked.'],
+    ['duplicate', 'It’s a Duplicate', 'Another request is for the same meeting. Left out of Statistics.']];
   var kl = el('div', 'outpick'); kl.setAttribute('role', 'radiogroup');
   kinds.forEach(function (k) {
     var lab = el('label', 'outopt' + (k[0] === kind ? ' on' : ''), '<input type="radio" name="okind" value="' + k[0] + '"' + (k[0] === kind ? ' checked' : '') + '><span><b>' + esc(k[1]) + '</b><small>' + esc(k[2]) + '</small></span>');
@@ -1097,6 +1098,7 @@ function closeDialog(req, preset, editOnly) {
     if (!k) { say.innerHTML = '<span style="color:var(--bad)">Pick what happened.</span>'; return; }
     var r = clone(getReq(req.id) || req), now = Date.now(), wasAuto = r.robot && r.robot.auto, edit = {}, msg;
     if (k === 'duplicate') {
+      if (r.bookedOutside) { delete r.bookedOutside; r.chosen = null; }
       r.status = 'cancelled'; r.closed = 'duplicate'; r.closedAt = now; r.closedBy = me().name; if (wasAuto) edit.auto = false; msg = 'Closed as a duplicate';
     } else {
       var prev = r.outcome || {};
