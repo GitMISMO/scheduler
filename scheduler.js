@@ -1815,7 +1815,8 @@ function viewDetail(app, req) {
   head.innerHTML = '<div class="grow"><div style="margin-bottom:6px">' + phasePill(req) + '</div><h1>' + esc(req.title) + '</h1><p>' + meta.join(' · ') + '</p>' + (req.purpose ? '<p>' + esc(req.purpose) + '</p>' : '') + '</div>';
   var acts = el('div', 'grow-row');
   if (editable) {
-    acts.appendChild(btn('Draft an email', '', function () { openDraft(req, phase(req) === 'booked' ? 'confirm' : (req.guests || []).some(function (g) { return g.sentAt; }) ? 'follow' : 'ask'); }, 'spark'));
+    /* the Scheduler sends its own polls, follow-ups and invitations, so Draft an Email is only for requests run by hand (Jonna, Nov 27) */
+    if (!isAuto(req)) acts.appendChild(btn('Draft an email', '', function () { openDraft(req, phase(req) === 'booked' ? 'confirm' : (req.guests || []).some(function (g) { return g.sentAt; }) ? 'follow' : 'ask'); }, 'spark'));
     if (req.askedByEmail) acts.appendChild(btn('Reply to ' + (first(req.askedBy) || 'the person who asked'), 'ghost', function () { openReply(replySourceFor(req), req); }, 'mail'));
     acts.appendChild(btn('Edit details', 'ghost', function () { openEdit(req); }, 'pen'));
   }
