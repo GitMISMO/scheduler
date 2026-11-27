@@ -886,12 +886,6 @@ function couldntSchedule(r) { return !!(r && r.status === 'cancelled' && r.close
 /* the same meeting asked for twice (e.g. a second email that started a second request): closed and
    left out of every count, so Statistics count the meeting once */
 function isDuplicate(r) { return !!(r && r.status === 'cancelled' && r.closed === 'duplicate'); }
-function closeDuplicate(req) {
-  if (!confirm('Close “' + (req.title || 'this request') + '” as a duplicate? Use this when the same meeting has another request. It’s left out of Statistics and the Scheduler stops emailing about it. You can bring it back later.')) return;
-  var r = clone(getReq(req.id) || req); r.status = 'cancelled'; r.closed = 'duplicate'; r.closedAt = Date.now(); r.closedBy = me().name;
-  if (r.robot && r.robot.auto) r.robotEdit = { auto: false };
-  put(r, 'Closed as a duplicate'); toast('Closed as a duplicate.');
-}
 function bookedSlot(r) { return r && r.status === 'booked' ? slotById(r, r.chosen) : null; }
 function isPast(r) { var s = bookedSlot(r); return !!(s && s.e <= Date.now()); }
 /* Someone set the meeting up themselves (for example Amy sent her own Outlook invitation): record
@@ -902,15 +896,6 @@ function isPast(r) { var s = bookedSlot(r); return !!(s && s.e <= Date.now()); }
    have the Scheduler email everyone who got the poll; pressing the button is the approval.
    robot.cancelNotice {by, at, note} → robot/logic.mjs sends "No Longer Scheduling". */
 function polledGuests(req) { return (req.guests || []).filter(function (g) { return g && g.email && !g.gone && g.sentAt; }); }
-function cancelRequest(req) {
-  req = getReq(req.id) || req;
-  var pg = polledGuests(req);
-  if (!pg.length || !canApprove()) {
-    if (!confirm('Cancel “' + req.title + '”? Its Team HQ reminder will be ticked off. You can bring it back later.' + (pg.length ? '\n\nNobody is emailed. Vanessa or Jonna can tell the guests from the cancelled request.' : ''))) return;
-    var r0 = clone(req); r0.status = 'cancelled'; delete r0.closed; r0.closedAt = Date.now(); r0.closedBy = me().name; put(r0, 'Cancelled'); return;
-  }
-  tellGuestsDialog(req, true);
-}
 function tellGuestsDialog(req, cancelling) {
   var pg = polledGuests(req);
   var D = dialog(cancelling ? 'Cancel This Request' : 'Tell the Guests');
@@ -1038,39 +1023,95 @@ function startNewPoll(req) {
     D.close(); toast(check ? 'Started. In a few minutes the times show on the new request and under Needs You; nobody is emailed until you press Send the Poll.' : 'Started. The poll goes out from scheduling@mismo.org within a few minutes.');
   }, 'check'));
 }
-function markOutside(req) {
+/* ======================================================================
+   DIDN'T GO TO PLAN (Jonna, Nov 27): a request the Scheduler didn't book itself, because it was
+   scheduled outside the system, cancelled, or no time could be found. Instead of asking when it
+   was scheduled, every way of closing a request asks WHY, and whether it was about how the
+   Scheduler handled it or outside its control. r.outcome = {kind, why, cause, by, at, via}.
+   The robot has Claude sort each reason into a short label (outcome.lesson) so the same reasons
+   group together in Statistics, which is how the Scheduler learns what to change.
+   ====================================================================== */
+var OUT_KIND = { outside: { n: 'Scheduled Outside the System', s: 'Outside the System', k: '#a78bfa' }, cancelled: { n: 'Cancelled', s: 'Cancelled', k: '#9fb3c8' }, unscheduled: { n: 'Couldn’t Schedule', s: 'Couldn’t Schedule', k: '#ff8f7d' } };
+var CAUSE = { scheduler: 'How the Scheduler handled it', outside: 'Outside its control', unknown: 'Not sure' };
+/* a cancelled request that another request replaced (moved to a new request, or Start a New Poll): the meeting is counted once, on the new one */
+function isSuperseded(r) { return !!(r && r.status === 'cancelled' && (r.closed === 'moved' || (r.restartedAs && getReq(r.restartedAs)))); }
+function outcomeKind(r) {
+  if (!r) return '';
+  if (r.status === 'booked' && r.bookedOutside) return 'outside';
+  if (couldntSchedule(r)) return 'unscheduled';
+  if (r.status === 'cancelled' && !isDuplicate(r) && !isSuperseded(r)) return 'cancelled';
+  return '';
+}
+function closeDialog(req, preset, editOnly) {
   req = getReq(req.id) || req;
-  var D = dialog('Scheduled Outside the System'), now = Date.now(), dur = (+req.duration || 30) * 60000;
-  var R = req.robot || {}, guess = R.proposed || (req.slots || []).filter(function (x) { return x.s > now; }).sort(function (a, b) { return a.s - b.s; })[0] || null;
-  var gp = guess ? parts(guess.s, ET) : null;
-  D.body.appendChild(el('p', 'small muted', 'For a meeting someone set up themselves, such as their own Outlook invitation. It moves to Scheduled Outside the System on the Dashboard and counts in Statistics as scheduled. The Scheduler stops emailing about it and sends no invitation.'));
-  var row = el('div', 'grow-row');
-  var di = el('input'); di.type = 'date'; di.value = gp ? gp.iso : todayISO(ET); di.style.width = 'auto'; di.setAttribute('aria-label', 'Day of the meeting');
-  var ti = el('input'); ti.type = 'time'; ti.step = 300; ti.value = gp ? String(gp.h).padStart(2, '0') + ':' + String(gp.mi).padStart(2, '0') : '10:00'; ti.style.width = 'auto'; ti.setAttribute('aria-label', 'Start time, Eastern');
-  row.appendChild(di); row.appendChild(ti); row.appendChild(el('span', 'small muted', 'Eastern · ' + (+req.duration || 30) + ' minutes'));
-  D.body.appendChild(row);
-  var wl = el('label', 'f'); wl.style.marginTop = '12px'; wl.innerHTML = '<span>Who sent the invitation <span class="hint">(optional)</span></span><input type="text" placeholder="e.g. Amy Moses">';
-  D.body.appendChild(wl);
-  var say = el('p', 'small'); D.body.appendChild(say);
-  D.foot.appendChild(btn('Cancel', 'ghost', function () { D.close(); }));
-  D.foot.appendChild(btn('Mark as Scheduled', '', function () {
-    var dv = di.value, tv = ti.value, m = /^(\d{1,2}):(\d{2})$/.exec(tv || '');
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dv) || !m) { say.innerHTML = '<span style="color:var(--bad)">Pick the day and start time.</span>'; return; }
-    var s0 = at(dv, (+m[1]) * 60 + (+m[2]), ET), who = $('input', wl).value.trim();
-    var r = clone(getReq(req.id)), id = 'out' + rid(4);
-    r.slots = (r.slots || []).concat({ id: id, s: s0, e: s0 + dur, outside: true, added: Date.now() });
-    r.status = 'booked'; r.chosen = id; r.bookedAt = Date.now(); delete r.closed; delete r.closedAt; delete r.closedBy;
-    r.bookedOutside = { by: me().name, at: Date.now(), who: who };
-    if (r.robot && r.robot.auto) r.robotEdit = { auto: false, stage: 'booked' };
-    put(r, 'Scheduled outside the system for ' + slotLabel({ s: s0, e: s0 + dur }, ET, true) + (who ? ' (' + who + ' sent the invitation)' : ''));
-    D.close(); toast('Marked as scheduled. It’s under Scheduled Outside the System on the Dashboard.');
-  }, 'check'));
+  var O = req.outcome || {}, kind = editOnly ? (outcomeKind(req) || O.kind || 'cancelled') : (preset || 'cancelled'), pg = polledGuests(req);
+  var D = dialog(editOnly ? 'Why Didn’t It Go to Plan?' : 'Close This Request');
+  var b = D.body;
+  var kinds = [['outside', 'Scheduled Outside the System', 'Someone set the meeting up themselves, for example their own Outlook invitation.'],
+    ['cancelled', 'Cancelled', 'The meeting isn’t being scheduled any more.'],
+    ['unscheduled', 'Couldn’t Schedule', 'We tried, and no time worked.']].concat(editOnly ? [] : [['duplicate', 'It’s a Duplicate', 'Another request is for the same meeting. Left out of Statistics.']]);
+  var kl = el('div', 'outpick'); kl.setAttribute('role', 'radiogroup');
+  kinds.forEach(function (k) {
+    var lab = el('label', 'outopt' + (k[0] === kind ? ' on' : ''), '<input type="radio" name="okind" value="' + k[0] + '"' + (k[0] === kind ? ' checked' : '') + '><span><b>' + esc(k[1]) + '</b><small>' + esc(k[2]) + '</small></span>');
+    kl.appendChild(lab);
+  });
+  b.appendChild(kl);
+  var wl = el('label', 'f'); wl.style.marginTop = '14px';
+  wl.innerHTML = '<span>Why? <span class="hint">Telling the Scheduler helps it learn.</span></span><textarea rows="3" maxlength="600" placeholder="For example: the guest booked it themselves; the meeting wasn’t needed; the times offered were too far out"></textarea>';
+  $('textarea', wl).value = O.why || '';
+  b.appendChild(wl);
+  var cw = el('div', 'causepick');
+  cw.innerHTML = '<span class="small">Was it about how the Scheduler handled it?</span><div class="seg">' + Object.keys(CAUSE).map(function (c) { return '<label class="' + ((O.cause || 'unknown') === c ? 'on' : '') + '"><input type="radio" name="ocause" value="' + c + '"' + ((O.cause || 'unknown') === c ? ' checked' : '') + '>' + esc(CAUSE[c]) + '</label>'; }).join('') + '</div>';
+  b.appendChild(cw);
+  /* cancelling while the poll is out: Vanessa or Jonna can tell the guests (pressing Close is the approval) */
+  var tellOn = !editOnly && pg.length && canApprove() && req.status !== 'cancelled';
+  var tl = el('label', 'small'); tl.style.cssText = 'display:flex;gap:8px;align-items:flex-start;margin-top:14px';
+  var tcb = el('input'); tcb.type = 'checkbox'; tcb.checked = true; tcb.style.cssText = 'width:auto;margin-top:3px';
+  tl.appendChild(tcb); tl.appendChild(el('span', '', 'Email the ' + plural(pg.length, 'person', 'people') + ' who got the poll that it’s no longer being scheduled: ' + esc(pg.map(function (g) { return g.name || g.email; }).join(', '))));
+  if (tellOn) b.appendChild(tl);
+  var say = el('p', 'small'); b.appendChild(say);
+  function sync() {
+    var k = ($('input[name=okind]:checked', kl) || {}).value;
+    $$('.outopt', kl).forEach(function (x) { x.classList.toggle('on', $('input', x).checked); });
+    $$('label', cw).forEach(function (x) { x.classList.toggle('on', $('input', x).checked); });
+    wl.style.display = cw.style.display = k === 'duplicate' ? 'none' : '';
+    tl.style.display = k === 'cancelled' || k === 'unscheduled' ? 'flex' : 'none';
+  }
+  kl.onchange = sync; cw.onchange = sync; tcb.onchange = sync; sync();
+  D.foot.appendChild(btn('Cancel', 'ghost', D.close));
+  D.foot.appendChild(btn(editOnly ? 'Save' : 'Close the Request', editOnly ? '' : 'danger', function () {
+    var k = ($('input[name=okind]:checked', kl) || {}).value, why = $('textarea', wl).value.trim().slice(0, 600), cause = ($('input[name=ocause]:checked', cw) || {}).value || 'unknown';
+    if (!k) { say.innerHTML = '<span style="color:var(--bad)">Pick what happened.</span>'; return; }
+    var r = clone(getReq(req.id) || req), now = Date.now(), wasAuto = r.robot && r.robot.auto, edit = {}, msg;
+    if (k === 'duplicate') {
+      r.status = 'cancelled'; r.closed = 'duplicate'; r.closedAt = now; r.closedBy = me().name; if (wasAuto) edit.auto = false; msg = 'Closed as a duplicate';
+    } else {
+      var prev = r.outcome || {};
+      r.outcome = { kind: k, why: why, cause: cause, by: me().name, at: now, via: 'staff' };
+      if (prev.why === why && prev.lesson) { r.outcome.lesson = prev.lesson; r.outcome.sortedBy = prev.sortedBy; }
+      if (k === 'outside' && !(r.status === 'booked' && r.bookedOutside)) {
+        r.status = 'booked'; r.bookedAt = now; if (!r.bookedOutside) r.chosen = null; delete r.closed; delete r.closedAt; delete r.closedBy;
+        r.bookedOutside = r.bookedOutside || { by: me().name, at: now, who: '' };
+        if (wasAuto) { edit.auto = false; edit.stage = 'booked'; }
+      } else if (k === 'cancelled' && !(r.status === 'cancelled' && !r.closed)) {
+        if (r.status === 'booked' && r.bookedOutside) { delete r.bookedOutside; r.chosen = null; }
+        if (r.status !== 'cancelled' || r.closed === 'unscheduled') { r.status = 'cancelled'; delete r.closed; r.closedAt = now; r.closedBy = me().name; }
+      } else if (k === 'unscheduled' && !couldntSchedule(r)) {
+        if (r.bookedOutside) { delete r.bookedOutside; r.chosen = null; }
+        r.status = 'cancelled'; r.closed = 'unscheduled'; r.closedAt = now; r.closedBy = me().name;
+      }
+      if (tellOn && (k === 'cancelled' || k === 'unscheduled') && tcb.checked) edit.cancelNotice = { by: me().name, at: now, note: '' };
+      msg = (editOnly ? 'Why it didn’t go to plan: ' : 'Closed: ' + OUT_KIND[k].n.toLowerCase() + (why ? ', because ' : '')) + (why ? '“' + why + '”' : editOnly ? '(no reason)' : '') + ' · ' + CAUSE[cause];
+    }
+    if (Object.keys(edit).length) r.robotEdit = edit;
+    put(r, msg); D.close();
+    toast(k === 'duplicate' ? 'Closed as a duplicate.' : edit.cancelNotice ? 'Closed. The people who got the poll hear from scheduling@mismo.org within a few minutes.' : editOnly ? 'Saved. The Scheduler sorts the reason with the others in Statistics.' : 'Closed. It’s under Didn’t Go to Plan on the Dashboard.');
+  }, editOnly ? 'check' : null));
 }
-function closeUnscheduled(req) {
-  if (!confirm('Close “' + (req.title || 'this request') + '” as Couldn’t Schedule? The Scheduler stops emailing about it, and it stays on the Dashboard for reference. You can bring it back later.')) return;
-  var r = clone(req); r.status = 'cancelled'; r.closed = 'unscheduled'; r.closedAt = Date.now(); r.closedBy = me().name;
-  put(r, 'Closed: couldn’t schedule'); toast('Closed as Couldn’t Schedule.');
-}
+function closeDuplicate(req) { closeDialog(req, 'duplicate'); }
+function cancelRequest(req) { closeDialog(req, 'cancelled'); }
+function markOutside(req) { closeDialog(req, 'outside'); }
+function closeUnscheduled(req) { closeDialog(req, 'unscheduled'); }
 function phasePill(req) { var p = couldntSchedule(req) ? PHASE.unscheduled : PHASE[phase(req)]; return '<span class="pill ' + p.c + '">' + p.n + '</span>'; }
 function slotById(req, id) { return (req.slots || []).find(function (s) { return s.id === id; }) || null; }
 /* everyone's answer for one time: 'yes' | 'maybe' | 'no' | null */
@@ -1460,7 +1501,7 @@ function viewList(app) {
   app.appendChild(st);
   var f = el('div', 'filters');
   f.appendChild(seg([[false, 'Everyone’s'], [true, 'Mine']], STATE.listMine, function (v) { STATE.listMine = v; lsSet('listMine', v); render(); }));
-  f.appendChild(seg([['active', 'In Progress'], ['look', 'Needs a Look'], ['booked', 'Scheduled'], ['outside', 'Scheduled Outside'], ['past', 'Past'], ['unscheduled', 'Couldn’t Schedule'], ['cancelled', 'Cancelled'], ['all', 'All']], STATE.listShow, function (v) { STATE.listShow = v; lsSet('listShow', v); render(); }));
+  f.appendChild(seg([['active', 'In Progress'], ['look', 'Needs a Look'], ['booked', 'Scheduled'], ['outside', 'Scheduled Outside'], ['past', 'Past'], ['notplan', 'Didn’t Go to Plan'], ['unscheduled', 'Couldn’t Schedule'], ['cancelled', 'Cancelled'], ['all', 'All']], STATE.listShow, function (v) { STATE.listShow = v; lsSet('listShow', v); render(); }));
   app.appendChild(f);
   var m = me().email;
   var list = allReqs().filter(function (r) {
@@ -1471,6 +1512,7 @@ function viewList(app) {
     if (STATE.listShow === 'outside') return r.status === 'booked' && !!r.bookedOutside;
     if (STATE.listShow === 'past') return isPast(r);
     if (STATE.listShow === 'unscheduled') return couldntSchedule(r);
+    if (STATE.listShow === 'notplan') return !!outcomeKind(r);
     if (STATE.listShow === 'cancelled') return r.status === 'cancelled' && !r.closed || r.closed === 'cancelled';
     if (STATE.listShow === 'look') return needsYou(r);
     return true;
@@ -1687,6 +1729,71 @@ function guessFromEmail(txt) {
 }
 
 /* ---------------- one request ---------------- */
+/* "Where It Stands" (Jonna, Nov 27: the request pane was hard to read): one card at the top that
+   says, in plain words, what's happening now and what comes next */
+function standing(req) {
+  var R = req.robot || {}, gs = (req.guests || []).filter(function (g) { return g && !g.gone; });
+  var ans = gs.filter(function (g) { return g.answer; }), wait = followWaiting(req), nm = function (a) { return a.map(function (g) { return g.name || g.email; }).join(', '); };
+  var k = outcomeKind(req), O = req.outcome || {};
+  if (isDuplicate(req)) return { t: 'mute', h: 'Closed as a Duplicate', d: ['Another request is for the same meeting, so this one isn’t counted in Statistics.'] };
+  if (isSuperseded(req)) return { t: 'mute', h: 'Replaced by a Newer Request', d: ['The meeting is counted once, on the newer request.'] };
+  if (k) return { t: 'warn', out: true, h: 'Didn’t Go to Plan: ' + OUT_KIND[k].n, d: [O.why ? 'Why: “' + O.why + '”' : 'No reason recorded yet. Adding one helps the Scheduler learn.', O.why ? CAUSE[O.cause || 'unknown'] + (O.lesson ? ' · sorted as “' + O.lesson + '”' : '') : '', (O.by ? 'Closed by ' + O.by : req.closedBy ? 'Closed by ' + req.closedBy : '') + (O.via === 'email' ? ' by email' : '')] };
+  if (req.status === 'booked') {
+    var sl = bookedSlot(req), inv = R.invite || {};
+    return { t: 'ok', h: sl ? (isPast(req) ? 'Met ' : 'Booked for ') + slotLabel(sl, VIEW_TZ, true) : 'Booked', d: [inv.state === 'sent' ? 'Everyone has the Outlook invitation from scheduling@mismo.org.' : inv.state === 'failed' ? 'The invitation couldn’t go out by itself: send it with the button below.' : inv.state ? 'The invitation goes out within a few minutes.' : 'Send the invitation from Outlook (buttons below).'] };
+  }
+  if (awaitingApproval(req)) return { t: 'act', h: 'A Time Works: ' + slotLabel(R.proposed, VIEW_TZ, true), d: ['Waiting for you or Vanessa to approve it. Nobody outside MISMO has been told yet.', R.proposed.how ? 'Why this time: ' + R.proposed.how + '.' : ''] };
+  if (awaitingPollCheck(req)) return { t: 'act', h: 'Poll Ready to Check', d: ['Nobody has been emailed yet. Look at the times below, then press Send the Poll.'] };
+  if (awaitingDecision(req)) return { t: 'act', h: 'No Time Works for Everyone Yet', d: [ans.length + ' of ' + gs.length + ' answered.', 'Your call: book the best time in the grid, make someone optional, or send new times.'] };
+  if (needsLook(req)) return { t: 'act', h: 'Stopped: Needs a Person', d: ['The Scheduler stopped because ' + (R.why || 'it needs a person') + '.'] };
+  if (followsFinished(req)) return { t: 'act', h: 'Follow-Ups Finished', d: ['Three follow-ups went out with no answer from ' + nm(wait) + '.'] };
+  if (isAuto(req) && R.stage === 'polling') {
+    var nexts = wait.map(function (g) { var f = followOf(req, g); return f.sent < FOLLOW_MAX ? Math.max(f.next, Date.now()) : 0; }).filter(Boolean);
+    var live = (req.slots || []).filter(function (x) { return x.s > Date.now(); }).length;
+    return { t: 'info', h: 'Poll Out: ' + ans.length + ' of ' + gs.length + ' Answered', d: [wait.length ? 'Waiting on ' + nm(wait) + '.' : 'Everyone has answered.', wait.length ? (R.followStop ? 'Follow-ups are stopped.' : nexts.length ? 'Next follow-up ' + fmtDay(Math.min.apply(null, nexts), VIEW_TZ) + '.' : '') : '', plural(live, 'time', 'times') + ' on the poll. As soon as one works for everyone, it comes to you or Vanessa to approve.'] };
+  }
+  if (isAuto(req)) return { t: 'info', h: 'The Scheduler Is Working on It', d: ['It picks the times and sends the poll within a few minutes.'] };
+  return { t: 'info', h: 'Being Run by Hand', d: [(req.slots || []).length ? (gs.some(function (g) { return g.sentAt; }) ? ans.length + ' of ' + gs.length + ' answered.' : 'Times picked; send the poll under Outside Guests.') : 'Pick times, then send the poll.', 'Press Let the Scheduler Handle It to hand it over.'] };
+}
+function standingCard(req) {
+  var st = standing(req), c = el('div', 'standing t-' + st.t);
+  c.innerHTML = '<small>Where It Stands</small><h3>' + esc(st.h) + '</h3>' + st.d.filter(Boolean).map(function (x) { return '<p>' + esc(x) + '</p>'; }).join('');
+  if (st.out && canEdit() && !isArchived(req)) {
+    var a = el('div', 'grow-row'); a.style.marginTop = '10px';
+    a.appendChild(btn(req.outcome && req.outcome.why ? 'Edit Why' : 'Add Why', 'sm', function () { closeDialog(req, null, true); }, 'pen'));
+    c.appendChild(a);
+  }
+  return c;
+}
+/* every email about this request in one list: what the Scheduler sent, and what came in
+   (Jonna, Nov 27: incoming email belongs with its poll, not in a separate list) */
+function emailsPanel(req, n) {
+  var p = el('section', 'panel');
+  p.innerHTML = '<div class="panel-h"><span class="step">' + n + '</span><h2>Emails</h2><span class="sub">sent and received, newest first</span></div>';
+  var b = el('div', 'panel-b'); p.appendChild(b);
+  b.innerHTML = '<div class="small muted">Loading…</div>';
+  var R = req.robot || {}, ids = {}; (R.replies || []).forEach(function (x) { ids[x] = 1; }); if (req.inboxId) ids[req.inboxId] = 1;
+  loadSent().then(function () {
+    var rows = [];
+    Object.keys(SENT.docs || {}).forEach(function (k) { var m = SENT.docs[k]; if (m && m.reqId === req.id && !m.sending) rows.push({ at: m.at || 0, dir: 'out', subj: m.subject || '', who: (m.to || []).join(', ') + ((m.cc || []).length ? ' (copy: ' + m.cc.join(', ') + ')' : ''), ok: m.ok, tries: m.tries }); });
+    inboxItems().forEach(function (x) { if (x.reqId === req.id || ids[x.id]) rows.push({ at: x.receivedAt || 0, dir: 'in', subj: x.subject || '(no subject)', who: displayName(x), x: x }); });
+    rows.sort(function (a, c) { return c.at - a.at; });
+    var waiting = (R.pending || []).length;
+    b.innerHTML = '';
+    if (waiting) b.appendChild(el('div', 'small muted', plural(waiting, 'email', 'emails') + ' waiting to go out.'));
+    if (!rows.length) { b.appendChild(el('div', 'empty', 'No emails yet.')); return; }
+    var t = el('table', 'mails'); t.innerHTML = '<thead><tr><th>When</th><th></th><th>Email</th><th>From / To</th></tr></thead>';
+    var tb = el('tbody'); t.appendChild(tb);
+    rows.forEach(function (m) {
+      var tr = el('tr', m.dir === 'in' ? 'in' : '');
+      tr.innerHTML = '<td>' + esc(fmtDay(m.at, VIEW_TZ) + ' ' + fmtTime(m.at, VIEW_TZ)) + '</td><td>' + (m.dir === 'in' ? '<span class="pill p-wait">Received</span>' : m.ok ? '<span class="pill p-yes">Sent</span>' : '<span class="pill p-due">Not sent' + ((m.tries || 0) >= 5 ? ', gave up' : ', will retry') + '</span>') + '</td><td>' + esc(tidyText(m.subj)) + '</td><td>' + esc(m.dir === 'in' ? 'From ' + m.who : 'To ' + m.who) + '</td>';
+      if (m.x) { tr.style.cursor = 'pointer'; tr.title = 'Open the email'; tr.onclick = function () { openEmail(m.x); }; }
+      tb.appendChild(tr);
+    });
+    var w = el('div'); w.style.overflowX = 'auto'; w.appendChild(t); b.appendChild(w);
+  });
+  return p;
+}
 function viewDetail(app, req) {
   var editable = canEdit() && req.status !== 'cancelled' && !isArchived(req);
   var head = el('div', 'pagehead');
@@ -1708,6 +1815,7 @@ function viewDetail(app, req) {
   }
   head.appendChild(acts);
   app.appendChild(head);
+  app.appendChild(standingCard(req));
   if (req.status === 'cancelled' && CN) app.appendChild(el('div', 'notice', CN.done ? '<b>The guests were told</b> it’s no longer being scheduled (' + esc(fmtDay(CN.done, VIEW_TZ)) + ', as ' + esc(CN.by || 'staff') + ' asked).' : '<b>Telling the guests</b> it’s no longer being scheduled. It goes out from scheduling@mismo.org within a few minutes.'));
   if (req.restartOf && getReq(req.restartOf)) { var ro = el('div', 'notice', 'Started again after an earlier request was cancelled. '); var rob = el('button', 'linkbtn', 'Open the cancelled one'); rob.type = 'button'; rob.onclick = function () { go(null, req.restartOf); }; ro.appendChild(rob); app.appendChild(ro); }
   if (isArchived(req)) app.appendChild(el('div', 'notice', '<b>Archived ' + esc(fmtDay(req.archivedAt, VIEW_TZ)) + '.</b> Finished requests move to the archive a month after the meeting (or after they were closed). It’s kept for reference and can’t be changed; guest links no longer work.'));
@@ -1715,9 +1823,9 @@ function viewDetail(app, req) {
   if (req.status === 'booked') {
     var sl = slotById(req, req.chosen);
     var bk = el('div', 'booked');
-    bk.innerHTML = '<div style="flex:1 1 280px"><div class="small muted">Booked for</div><div class="when">' + esc(sl ? slotLabel(sl, VIEW_TZ, true) : 'a time no longer listed') + '</div>' + (sl && VIEW_TZ !== ET ? '<div class="small muted">' + esc(slotLabel(sl, ET, true)) + '</div>' : '') + '</div>';
+    bk.innerHTML = '<div style="flex:1 1 280px"><div class="small muted">' + (sl || !req.bookedOutside ? 'Booked for' : 'Booked') + '</div><div class="when">' + esc(sl ? slotLabel(sl, VIEW_TZ, true) : req.bookedOutside ? 'Outside the Scheduler' : 'a time no longer listed') + '</div>' + (sl && VIEW_TZ !== ET ? '<div class="small muted">' + esc(slotLabel(sl, ET, true)) + '</div>' : '') + '</div>';
     var ba = el('div', 'grow-row'), inv = (req.robot && req.robot.invite) || null, zm = inv && inv.zoom;
-    if (req.bookedOutside) $('div', bk).appendChild(el('div', 'small', '<b>Scheduled outside the system</b>' + (req.bookedOutside.who ? ': ' + esc(req.bookedOutside.who) + ' sent the invitation' : '') + '. Marked by ' + esc(req.bookedOutside.by || 'staff') + ' ' + esc(whenAgo(req.bookedOutside.at || Date.now())) + '. The Scheduler doesn’t email anyone about it.')).style.marginTop = '8px';
+    if (req.bookedOutside) $('div', bk).appendChild(el('div', 'small', '<b>Scheduled outside the system</b>' + (req.bookedOutside.who && req.bookedOutside.who !== req.bookedOutside.by ? ': ' + esc(req.bookedOutside.who) + ' sent the invitation' : '') + '. Marked by ' + esc(req.bookedOutside.by || 'staff') + ' ' + esc(whenAgo(req.bookedOutside.at || Date.now())) + '. The Scheduler doesn’t email anyone about it.')).style.marginTop = '8px';
     if (inv) {
       var it = inv.state === 'sent' ? '<b>Calendar invite sent</b> from scheduling@mismo.org' + (inv.at ? ' ' + esc(whenAgo(inv.at)) : '') + '.'
         : inv.state === 'failed' ? '<b>The invite couldn’t be sent automatically</b> (' + esc(String(inv.lastErr || '').slice(0, 120)) + '). Send it with the button.'
@@ -1748,17 +1856,17 @@ function viewDetail(app, req) {
     }
     bk.appendChild(ba); app.appendChild(bk);
   }
-  if (req.status === 'cancelled') app.appendChild(el('div', 'notice warn', (couldntSchedule(req) ? '<b>We couldn’t find a time for this one.</b> Closed' + (req.closedBy ? ' by ' + esc(first(req.closedBy)) : '') + (req.closedAt ? ' ' + esc(fmtDay(req.closedAt, VIEW_TZ)) : '') + '. ' : isDuplicate(req) ? '<b>Closed as a duplicate</b> of another request for the same meeting. It isn’t counted in Statistics. ' : '<b>This request was cancelled.</b> ') + (canEdit() && !isArchived(req) && couldntSchedule(req) ? '<button class="linkbtn" type="button" id="outside">It Was Scheduled Outside the System</button> · <button class="linkbtn" type="button" id="dupe">It’s a Duplicate</button> · ' : '') + (canEdit() ? '<button class="linkbtn" type="button" id="reopen">Bring it back</button>' : '')));
+  if (req.status === 'cancelled') app.appendChild(el('div', 'notice warn', (couldntSchedule(req) ? '<b>We couldn’t find a time for this one.</b> Closed' + (req.closedBy ? ' by ' + esc(first(req.closedBy)) : '') + (req.closedAt ? ' ' + esc(fmtDay(req.closedAt, VIEW_TZ)) : '') + '. ' : isDuplicate(req) ? '<b>Closed as a duplicate</b> of another request for the same meeting. It isn’t counted in Statistics. ' : '<b>This request was cancelled.</b> ') + (canEdit() && !isArchived(req) ? '<button class="linkbtn" type="button" id="outside">Change What Happened</button> · <button class="linkbtn" type="button" id="reopen">Bring It Back</button>' : '')));
   if (req.status === 'cancelled' && req.robot && req.robot.cancelInvite) { var ci = req.robot.cancelInvite; app.appendChild(el('div', 'notice', ci.state === 'done' ? '<b>Meeting cancelled.</b> Everyone was sent Outlook’s cancellation from scheduling@mismo.org.' : ci.state === 'failed' ? '<b>The Outlook invitation couldn’t be cancelled automatically</b> (' + esc(String(ci.lastErr || '').slice(0, 120)) + '). Please cancel it in the scheduling@mismo.org calendar.' : '<b>Cancelling the Outlook invitation…</b> Everyone gets the cancellation within a few minutes.')); }
   if (req.robot) app.appendChild(robotPanel(req, editable));
-  if ($('#outside')) $('#outside').onclick = function () { markOutside(req); };
+  if ($('#outside')) $('#outside').onclick = function () { closeDialog(req, null, true); };
   if ($('#dupe')) $('#dupe').onclick = function () { closeDuplicate(req); };
   if ($('#reopen')) $('#reopen').onclick = function () { var r = clone(req); r.status = ''; delete r.closed; delete r.closedAt; delete r.closedBy; put(r, 'Brought back'); };
 
   /* times + who can make it */
   var pT = el('section', 'panel');
   var future = (req.slots || []).filter(function (s) { return s.e > Date.now(); });
-  pT.innerHTML = '<div class="panel-h"><span class="step">1</span><h2>Times you’re offering</h2><span class="sub">' + (req.slots || []).length + ' offered' + ((req.slots || []).length !== future.length ? ', ' + ((req.slots || []).length - future.length) + ' already passed' : '') + '</span></div>';
+  pT.innerHTML = '<div class="panel-h"><span class="step">1</span><h2>Times on Offer</h2><span class="sub">' + (req.slots || []).length + ' offered' + ((req.slots || []).length !== future.length ? ', ' + ((req.slots || []).length - future.length) + ' already passed' : '') + '</span></div>';
   var pa = el('div', 'acts'); $('.panel-h', pT).appendChild(pa);
   if (editable && req.status !== 'booked' && !isAuto(req)) pa.appendChild(btn((req.slots || []).length ? 'Change the times' : 'Pick times', (req.slots || []).length ? 'ghost sm' : 'sm', function () { openPicker(req); }, 'cal'));
   var pb = el('div', 'panel-b'); pT.appendChild(pb);
@@ -1768,7 +1876,7 @@ function viewDetail(app, req) {
 
   /* outside guests */
   var pG = el('section', 'panel');
-  pG.innerHTML = '<div class="panel-h"><span class="step">2</span><h2>Outside guests</h2><span class="sub">' + (LINKS.live ? 'Each gets a private link to mark the times that work' : 'Enter their answers when they reply') + '</span></div>';
+  pG.innerHTML = '<div class="panel-h"><span class="step">2</span><h2>Outside Guests</h2><span class="sub">' + (LINKS.live ? 'Each gets a private link to mark the times that work' : 'Enter their answers when they reply') + '</span></div>';
   var ga = el('div', 'acts'); $('.panel-h', pG).appendChild(ga);
   var unsent = (req.guests || []).filter(function (g) { return !g.sentAt && !g.answer; });
   if (editable && unsent.length && (req.slots || []).length && req.status !== 'booked' && !isAuto(req)) ga.appendChild(btn('Send the Poll', 'sm', function () { sendPoll(req, unsent); }));
@@ -1836,18 +1944,16 @@ function viewDetail(app, req) {
 
   /* the original email and what happened */
   var pL = el('section', 'panel');
-  pL.innerHTML = '<div class="panel-h"><h2>Background</h2></div>';
+  app.appendChild(emailsPanel(req, 3));
+  pL.innerHTML = '<div class="panel-h"><span class="step">4</span><h2>History</h2><span class="sub">everything that happened, newest first</span></div>';
   var lb = el('div', 'panel-b'); pL.appendChild(lb);
-  if (req.source) { lb.appendChild(el('div', 'small muted', 'The email that started it')); var pre = el('pre', 'src'); pre.textContent = req.source; lb.appendChild(pre); }
+  if (req.source) { var sd = el('details', 'srcbox'); sd.innerHTML = '<summary>The email that started it</summary>'; var pre = el('pre', 'src'); pre.textContent = req.source; sd.appendChild(pre); lb.appendChild(sd); }
   var ul = el('ul', 'log');
   (req.log || []).slice().reverse().forEach(function (x) { ul.appendChild(el('li', null, '<span>' + esc(fmtDay(x.at, VIEW_TZ) + ' ' + fmtTime(x.at, VIEW_TZ)) + '</span><span>' + esc(tidyText(x.what)) + ' — ' + esc(first(x.by)) + '</span>')); });
-  if ((req.log || []).length) { lb.appendChild(el('div', 'small muted', 'History')); lb.appendChild(ul); }
+  if ((req.log || []).length) lb.appendChild(ul);
   if (editable && req.status !== 'booked') {
-    var cx = btn('Cancel this request', 'danger sm', function () { cancelRequest(req); });
-    cx.style.marginTop = '14px';
-    if (req.status !== 'cancelled') { var so0 = btn('Scheduled Outside the System', 'ghost sm', function () { markOutside(req); }, 'cal'); so0.style.marginTop = '14px'; so0.style.marginRight = '8px'; lb.appendChild(so0); }
-    if (req.status !== 'cancelled') { var cu0 = btn('Close as Couldn’t Schedule', 'ghost sm', function () { closeUnscheduled(req); }); cu0.style.marginTop = '14px'; cu0.style.marginRight = '8px'; lb.appendChild(cu0); }
-    if (req.status !== 'cancelled') { var du0 = btn('Close as Duplicate', 'ghost sm', function () { closeDuplicate(req); }); du0.style.marginTop = '14px'; du0.style.marginRight = '8px'; lb.appendChild(du0); }
+    var cx = btn('Close This Request', 'danger sm', function () { closeDialog(req, 'cancelled'); });
+    cx.style.marginTop = '14px'; cx.title = 'Scheduled outside the system, cancelled, couldn’t schedule, or a duplicate: you’ll be asked why';
     lb.appendChild(cx);
   }
   app.appendChild(pL);
@@ -1864,7 +1970,7 @@ function robotPanel(req, editable) {
   var R = req.robot || {}, look = needsLook(req), on = isAuto(req);
   var p = el('section', 'panel');
   var sub = couldntSchedule(req) ? 'Couldn’t schedule — closed' : isDuplicate(req) ? 'Closed as a duplicate' : req.status === 'cancelled' ? 'Cancelled' : look ? 'Stopped — needs a person' : awaitingApproval(req) ? 'Found a time — waiting for approval' : !R.auto ? 'Handed over to staff' : req.status === 'booked' ? 'Booked it' : R.stage === 'polling' ? 'Poll out, set ' + (R.round || 1) + ' of times' : 'Working on it';
-  p.innerHTML = '<div class="panel-h"><h2>Scheduled Automatically</h2><span class="sub">' + esc(sub) + '</span></div>';
+  p.innerHTML = '<div class="panel-h"><h2>' + (on ? 'What the Scheduler Is Doing' : 'How This One Is Being Handled') + '</h2><span class="sub">' + esc(sub) + '</span></div>';
   var acts = el('div', 'acts'); $('.panel-h', p).appendChild(acts);
   var b = el('div', 'panel-b'); p.appendChild(b);
   if (awaitingApproval(req)) {
@@ -1901,7 +2007,7 @@ function robotPanel(req, editable) {
   f.innerHTML = '<div><small>Asked By</small><b>' + esc(rq.name || rq.email || '—') + '</b>' + (rq.name && rq.email ? '<span class="small muted">' + esc(rq.email) + '</span>' : '') + '</div>' +
     '<div><small>Times They Suggested</small><b>' + (offered.length ? esc(offered.slice(0, 3).join('; ')) + (offered.length > 3 ? ' +' + (offered.length - 3) : '') : 'None') + '</b></div>' +
     '<div><small>Times on Offer Now</small><b>' + (req.status === 'booked' ? 'Booked' : live) + '</b>' + ((R.dropped || []).length ? '<span class="small muted">' + R.dropped.length + ' taken off</span>' : '') + '</div>' +
-    '<div><small>Read By</small><b>' + (R.readBy === 'claude' ? 'Claude' : R.readBy === 'checked' ? 'Checked by staff' : 'Plain reader') + '</b></div>';
+    '<div><small>Who’s Meeting</small><b>' + esc((req.internal || []).map(function (id) { var x = person(id); return x ? first(x.name) : id; }).concat((req.guests || []).filter(function (g) { return !g.gone; }).map(function (g) { return g.name || g.email; })).join(', ') || '—') + '</b></div>';
   b.appendChild(f);
   /* follow-ups to guests who haven't answered */
   var fw = followWaiting(req);
@@ -1927,19 +2033,6 @@ function robotPanel(req, editable) {
     var ul = el('ul', 'log'); R.dropped.slice().reverse().slice(0, 6).forEach(function (d) { ul.appendChild(el('li', null, '<span>' + esc(slotLabel(d, VIEW_TZ)) + '</span><span>' + esc(d.why) + '</span>')); });
     b.appendChild(ul);
   }
-  var mails = el('div'); mails.innerHTML = '<div class="small muted" style="margin:12px 0 6px">Emails the Scheduler sent</div><div class="small muted">Loading…</div>';
-  b.appendChild(mails);
-  loadSent().then(function () {
-    var list = Object.keys(SENT.docs || {}).map(function (k) { return Object.assign({ id: k }, SENT.docs[k]); }).filter(function (m) { return m.reqId === req.id && !m.sending; })
-      .sort(function (x, y) { return (y.at || 0) - (x.at || 0); });
-    var waiting = (R.pending || []).length;
-    var body = list.map(function (m) {
-      return '<tr><td>' + esc(fmtDay(m.at, VIEW_TZ) + ' ' + fmtTime(m.at, VIEW_TZ)) + '</td><td>' + esc(m.subject || '') + '</td><td>' + esc((m.to || []).join(', ')) + ((m.cc || []).length ? '<div class="small muted">copy: ' + esc(m.cc.join(', ')) + '</div>' : '') + '</td><td>' +
-        (m.ok ? '<span class="pill p-yes">Sent</span>' : '<span class="pill p-due">Not sent' + ((m.tries || 0) >= 5 ? ', gave up' : ', will retry') + '</span>') + '</td></tr>';
-    }).join('');
-    mails.innerHTML = '<div class="small muted" style="margin:12px 0 6px">Emails the Scheduler sent' + (waiting ? ' · ' + waiting + ' waiting to go' : '') + '</div>' +
-      (body ? '<div style="overflow-x:auto"><table class="mails"><thead><tr><th>When</th><th>Email</th><th>To</th><th>Status</th></tr></thead><tbody>' + body + '</tbody></table></div>' : '<div class="small muted">None yet.</div>');
-  });
   if (editable && req.status !== 'booked') {
     if (on) acts.appendChild(btn('Take Over', 'ghost sm', function () {
       if (!confirm('Take this one over? The Scheduler stops emailing about it, and you pick times, send polls and follow up yourself.')) return;
@@ -2854,6 +2947,7 @@ var DICON = {
   you: '<path d="M9 11.5l2.6 2.6L17 8.7"/><rect x="3.5" y="3.5" width="17" height="17" rx="3"/>',
   poll: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
   booked: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M9 15l2 2 4-4"/>',
+  miss: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.4v.1"/>',
   mail: '<path d="M3 13h4l2 3h6l2-3h4"/><path d="M5.5 5h13l2.5 8v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5z"/>'
 };
 function RED() { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } }
@@ -2903,7 +2997,9 @@ function viewDash(app) {
   var inbox = inboxItems().filter(function (x) { return !isHealthMail(x); }), inWeek = inbox.filter(function (x) { return (x.receivedAt || 0) > weekAgo; });
   var guestsWaiting = 0, guestsIn = 0;
   polls.forEach(function (r) { (r.guests || []).forEach(function (g) { if (g.answer) guestsIn++; else if (g.sentAt) guestsWaiting++; }); });
-  var needN = approvals.length + looks.length + due.length;
+  /* an email the Scheduler couldn't place on a request (it couldn't read it, or a Times Form for a closed request) */
+  var stray = inbox.filter(function (x) { return x.status === 'new' && x.robotAt && /couldn’t read|left it for you/i.test(x.robotNote || '') && (x.receivedAt || 0) > now - 14 * 864e5; });
+  var needN = approvals.length + looks.length + due.length + stray.length;
 
   /* ---- the headline ---- */
   var hr = new Date().getHours(), nm = first(me().name);
@@ -2920,14 +3016,14 @@ function viewDash(app) {
   b1.onclick = needN ? function () { var t = $('#dash-needs'); if (t) t.scrollIntoView({ behavior: RED() ? 'auto' : 'smooth', block: 'start' }); } : function () { go('new'); };
   ha.appendChild(b1);
   if (needN && canEdit()) { var b2 = el('button', 'hbtn ghost', 'Start a Request'); b2.type = 'button'; b2.onclick = function () { go('new'); }; ha.appendChild(b2); }
-  var b3 = el('button', 'hbtn ghost', 'Team Calendar'); b3.type = 'button'; b3.onclick = function () { go('cal'); }; ha.appendChild(b3);
   /* the ring: of the last 30 days' requests, how many are booked */
-  var recent = all.filter(function (r) { return (r.createdAt || 0) > now - 30 * 864e5 && r.status !== 'cancelled'; });
-  var rb = recent.filter(function (r) { return r.status === 'booked'; }).length, pct = recent.length ? Math.round(100 * rb / recent.length) : 0;
+  /* the ring: of the last 30 days' requests that are finished, how many the Scheduler booked itself */
+  var recent = all.filter(function (r) { return (r.createdAt || 0) > now - 30 * 864e5 && !isDuplicate(r) && !isSuperseded(r) && (r.status === 'booked' || r.status === 'cancelled'); });
+  var rb = recent.filter(function (r) { return r.status === 'booked' && !r.bookedOutside; }).length, pct = recent.length ? Math.round(100 * rb / recent.length) : 0;
   var LEN = 2 * Math.PI * 54, off = function (v) { return (LEN * (1 - v / 100)).toFixed(1); };
   var ring = $('.hero-r', hero);
-  ring.innerHTML = '<div class="hring"><svg viewBox="0 0 132 132" aria-hidden="true"><defs><linearGradient id="hring-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#74bfeb"/><stop offset="1" stop-color="#5fd39a"/></linearGradient></defs><circle cx="66" cy="66" r="54" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="12"/><circle class="arc" cx="66" cy="66" r="54" fill="none" stroke="url(#hring-g)" stroke-width="12" stroke-linecap="' + (pct ? 'round' : 'butt') + '" stroke-dasharray="' + LEN.toFixed(1) + '" stroke-dashoffset="' + (RED() ? off(pct) : off(0)) + '" transform="rotate(-90 66 66)"/></svg><div class="hring-m"><b>' + pct + '%</b><span>Booked</span></div></div><div class="hring-c"><b>' + rb + '</b> booked · <b>' + (recent.length - rb) + '</b> in progress</div>';
-  ring.title = 'Of the requests started in the last 30 days, ' + pct + '% are booked';
+  ring.innerHTML = '<div class="hring"><svg viewBox="0 0 132 132" aria-hidden="true"><defs><linearGradient id="hring-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#74bfeb"/><stop offset="1" stop-color="#5fd39a"/></linearGradient></defs><circle cx="66" cy="66" r="54" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="12"/><circle class="arc" cx="66" cy="66" r="54" fill="none" stroke="url(#hring-g)" stroke-width="12" stroke-linecap="' + (pct ? 'round' : 'butt') + '" stroke-dasharray="' + LEN.toFixed(1) + '" stroke-dashoffset="' + (RED() ? off(pct) : off(0)) + '" transform="rotate(-90 66 66)"/></svg><div class="hring-m"><b>' + pct + '%</b><span>Booked</span></div></div><div class="hring-c"><b>' + rb + '</b> booked by it · <b>' + (recent.length - rb) + '</b> didn’t go to plan</div>';
+  ring.title = 'Of the requests from the last 30 days that are finished, ' + pct + '% were booked by the Scheduler itself (the rest were scheduled outside the system, cancelled, or couldn’t be scheduled)';
   if (!RED()) setTimeout(function () { var a = $('.arc', ring); if (a) a.setAttribute('stroke-dashoffset', off(pct)); }, 80);
   app.appendChild(hero);
 
@@ -2936,7 +3032,7 @@ function viewDash(app) {
   var autoBooked = bookedWeek.filter(function (r) { return r.robot && r.robot.auto; }).length;
   var notReq = inWeek.filter(function (x) { return x.status === 'dismissed' || (x.status === 'new' && x.robotAt); }).length;
   tiles.appendChild(ktile({ k: '#ff8f7d', ic: DICON.you, lab: 'Needs You', v: needN,
-    sub: needN ? [approvals.length ? approvals.length + ' to approve' : '', looks.length ? looks.length + ' to look at' : '', due.length ? due.length + ' to follow up' : ''].filter(Boolean).join(' · ') : 'nothing waiting on you',
+    sub: needN ? [approvals.length ? approvals.length + ' to approve' : '', looks.length ? looks.length + ' to look at' : '', due.length ? due.length + ' to follow up' : '', stray.length ? plural(stray.length, 'email', 'emails') + ' to place' : ''].filter(Boolean).join(' · ') : 'nothing waiting on you',
     cap: needN ? 'Approve · Look at · Follow up' : 'All clear', parts: needN ? [{ v: approvals.length, k: '#ff8f7d', t: 'To approve' }, { v: looks.length, k: '#f0b94a', t: 'To look at' }, { v: due.length, k: '#74bfeb', t: 'To follow up' }] : [{ v: 1, k: '#5fd39a' }],
     go: function () { var t = $('#dash-needs'); if (t) t.scrollIntoView({ behavior: RED() ? 'auto' : 'smooth', block: 'start' }); } }));
   tiles.appendChild(ktile({ k: '#74bfeb', ic: DICON.poll, lab: 'Polls Out', v: polls.length,
@@ -2947,10 +3043,12 @@ function viewDash(app) {
     sub: coming.length ? coming.length + ' coming up' : 'nothing on the calendar yet',
     cap: bookedWeek.length ? autoBooked + ' automatic · ' + (bookedWeek.length - autoBooked) + ' by hand' : 'None this week', parts: [{ v: autoBooked, k: '#5fd39a', t: 'Automatic' }, { v: bookedWeek.length - autoBooked, k: '#9fb3c8', t: 'By hand' }],
     go: function () { STATE.listShow = 'booked'; lsSet('listShow', 'booked'); go('list'); } }));
-  tiles.appendChild(ktile({ k: '#f0b94a', ic: DICON.mail, lab: 'Emails This Week', v: inWeek.length,
-    sub: inWeek.length ? (inWeek.length - notReq) + ' became requests' : 'nothing came in this week',
-    cap: inWeek.length ? (inWeek.length - notReq) + ' requests · ' + notReq + ' set aside' : 'scheduling@mismo.org', parts: [{ v: inWeek.length - notReq, k: '#f0b94a', t: 'Became requests' }, { v: notReq, k: '#9fb3c8', t: 'Set aside' }],
-    go: function () { go('inbox'); } }));
+  var notPlan = all.filter(function (r) { return outcomeKind(r) && (r.createdAt || 0) > now - 30 * 864e5; });
+  var npc = function (k) { return notPlan.filter(function (r) { return outcomeKind(r) === k; }).length; }, noWhy = notPlan.filter(function (r) { return !(r.outcome && r.outcome.why); }).length;
+  tiles.appendChild(ktile({ k: '#a78bfa', ic: DICON.miss, lab: 'Didn’t Go to Plan', v: notPlan.length,
+    sub: notPlan.length ? [npc('outside') ? npc('outside') + ' outside the system' : '', npc('cancelled') ? npc('cancelled') + ' cancelled' : '', npc('unscheduled') ? npc('unscheduled') + ' couldn’t schedule' : ''].filter(Boolean).join(' · ') : 'last 30 days: all booked by the Scheduler',
+    cap: notPlan.length ? (noWhy ? noWhy + ' still need a reason' : 'Every one has a reason') : 'Last 30 days', parts: notPlan.length ? [{ v: npc('outside'), k: '#a78bfa', t: 'Outside the system' }, { v: npc('cancelled'), k: '#9fb3c8', t: 'Cancelled' }, { v: npc('unscheduled'), k: '#ff8f7d', t: 'Couldn’t schedule' }] : [{ v: 1, k: '#5fd39a' }],
+    go: function () { var t = $('#dash-notplan'); if (t) t.scrollIntoView({ behavior: RED() ? 'auto' : 'smooth', block: 'start' }); } }));
   app.appendChild(tiles);
 
   var grid = el('div', 'hgrid'), L = el('div', 'hside'), R = el('div', 'hside');
@@ -2987,6 +3085,9 @@ function viewDash(app) {
     }
     nd.rows.appendChild(dashRow({ k: '#f0b94a', nm: r.title || 'Meeting request', small: 'Stopped because ' + (r.robot.why || 'it needs a person'), wh: (r.robot.requester && (r.robot.requester.name || r.robot.requester.email)) || '', age: 'Needs a look', ageCls: 'wait', go: function () { go(null, r.id); } }));
   });
+  stray.forEach(function (x) {
+    nd.rows.appendChild(dashRow({ k: '#f0b94a', nm: x.subject || '(no subject)', small: 'From ' + displayName(x) + ' · ' + (x.robotNote || ''), wh: '', age: 'Email', ageCls: 'wait', go: function () { openEmail(x); } }));
+  });
   due.forEach(function (x) {
     nd.rows.appendChild(dashRow({ k: '#74bfeb', nm: 'Follow up with ' + (x.g.name || x.g.email), small: x.r.title, wh: 'asked ' + fmtDay(Math.max(x.g.sentAt || 0, (x.g.followUps || []).slice(-1)[0] || 0), VIEW_TZ), age: 'Due ' + dayWord(x.due), ageCls: 'sky', go: function () { go(null, x.r.id); } }));
   });
@@ -3014,61 +3115,26 @@ function viewDash(app) {
   if (!coming.length) cu.p.appendChild(el('div', 'empty', 'Nothing on the calendar ahead. Once a time is approved, the meeting shows here until it happens.'));
   L.appendChild(cu.p);
 
-  /* ---- Scheduled Outside the System: set up by someone themselves (their own Outlook invitation) ---- */
-  var outs = booked.filter(function (r) { return r.bookedOutside; }).map(function (r) { return { r: r, sl: slotById(r, r.chosen) }; }).filter(function (x) { return x.sl; })
-    .sort(function (a, b) { var fa = a.sl.e > now, fb = b.sl.e > now; return fa !== fb ? (fa ? -1 : 1) : fa ? a.sl.s - b.sl.s : b.sl.s - a.sl.s; });
-  var so = dashPanel('Scheduled Outside the System', outs.length ? plural(outs.length, 'meeting', 'meetings') : '', outs.length > 4 ? 'All' : '', function () { STATE.listShow = 'outside'; lsSet('listShow', 'outside'); go('list'); });
-  outs.slice(0, 4).forEach(function (x) {
-    var r = x.r, ahead = x.sl.e > now, by = r.bookedOutside.who ? first(r.bookedOutside.who) + ' sent the invitation' : 'Marked by ' + (first(r.bookedOutside.by || '') || 'staff');
-    so.rows.appendChild(dashRow({ k: '#a78bfa', nm: r.title || 'Meeting', small: whoOf(r), wh: fmtTime(x.sl.s, VIEW_TZ) + ' ' + tzAbbr(x.sl.s, VIEW_TZ) + ' · ' + by,
-      age: ahead ? dayWord(parts(x.sl.s, VIEW_TZ).iso).replace(/^./, function (c) { return c.toUpperCase(); }) : fmtDay(x.sl.s, VIEW_TZ), ageCls: ahead && x.sl.s < now + 7 * 864e5 ? 'ok' : '', go: function () { go(null, r.id); } }));
+  /* ---- Didn't Go to Plan: scheduled outside the system, cancelled, couldn't schedule (Jonna, Nov 27:
+     these show where the Scheduler didn't do its job, so each one asks why) ---- */
+  var npAll = all.filter(outcomeKind).map(function (r) { return { r: r, k: outcomeKind(r), t: (r.outcome && r.outcome.at) || (r.bookedOutside && r.bookedOutside.at) || r.closedAt || r.updatedAt || 0 }; }).sort(function (a, b) { return b.t - a.t; });
+  var np = dashPanel('Didn’t Go to Plan', npAll.length ? 'newest first' : '', npAll.length > 7 ? 'All' : '', function () { STATE.listShow = 'notplan'; lsSet('listShow', 'notplan'); go('list'); });
+  np.p.id = 'dash-notplan'; np.p.style.scrollMarginTop = 'calc(var(--hq-h) + 16px)';
+  npAll.slice(0, 7).forEach(function (x) {
+    var r = x.r, O = r.outcome || {}, K = OUT_KIND[x.k];
+    var row = el('div', 'nprow'); row.tabIndex = 0; row.setAttribute('role', 'button'); row.style.setProperty('--k', K.k);
+    row.innerHTML = '<div class="np-top"><span class="np-kind">' + esc(K.n) + '</span><span class="np-when">' + esc(shortAgo(x.t || now)) + '</span></div><b>' + esc(r.title || 'Meeting request') + '</b>' +
+      (O.why ? '<p>“' + esc(O.why) + '”</p><span class="np-cause">' + esc(CAUSE[O.cause || 'unknown']) + (O.lesson ? ' · ' + esc(O.lesson) : '') + '</span>' : '<p class="np-none">No reason yet. Adding one helps the Scheduler learn.</p>');
+    if (!O.why && canEdit()) { var aw = btn('Add Why', 'sm', function (e) { e.stopPropagation(); closeDialog(r, null, true); }, 'pen'); aw.classList.add('np-add'); row.appendChild(aw); }
+    row.onclick = function (e) { if (e.target.closest('.np-add')) return; go(null, r.id); };
+    row.onkeydown = function (e) { if ((e.key === 'Enter' || e.key === ' ') && e.target === row) { e.preventDefault(); go(null, r.id); } };
+    np.rows.appendChild(row);
   });
-  if (!outs.length) so.p.appendChild(el('div', 'empty', 'Meetings someone set up themselves land here when a request is marked Scheduled Outside the System, so they still count as scheduled.'));
-  L.appendChild(so.p);
-
-  /* ---- Team This Week ---- */
-  var tw = dashPanel('Team This Week', 'free time, 9–5 Eastern', 'Calendar', function () { go('cal'); });
-  var tNow = Date.now(), tIso = todayISO(ET), dayOver = tNow >= at(tIso, 17 * 60, ET);
-  var days5 = bizDaysAhead(5, dayOver ? tIso : isoAdd(tIso, -1)).filter(function (d) { return !isWeekend(d); }).slice(0, 5);
-  var g = el('div', 'avgrid');
-  g.appendChild(el('span'));
-  days5.forEach(function (d) { g.appendChild(el('span', 'h', esc(new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', timeZone: 'UTC' })))); });
-  TEAM.people.forEach(function (pp) {
-    g.appendChild(el('span', 'who', esc(pp.name)));
-    days5.forEach(function (d) {
-      var free = 0, known = 0;
-      for (var m = 9 * 60; m < 17 * 60; m += 30) { if (at(d, m + 30, ET) <= tNow) continue; var st = calState(pp.id, at(d, m, ET), at(d, m + 30, ET)); if (st === null) continue; known++; if (st === 'free') free++; }
-      var c = el('span', 'c');
-      if (!known) { c.style.background = 'var(--unk)'; c.textContent = '–'; c.title = pp.name + ': no Outlook data'; }
-      else { var f = free / known, pctF = Math.round(100 * f); c.textContent = pctF + '%'; c.title = pp.name + ', ' + d + ': ' + pctF + '% free'; c.style.background = 'color-mix(in srgb,' + (f >= .6 ? '#5fd39a' : f >= .3 ? '#f0b94a' : '#ff8f7d') + ' ' + Math.round(22 + 30 * (f >= .6 ? f : 1 - f)) + '%,var(--surface))'; }
-      g.appendChild(c);
-    });
-  });
-  tw.rows.appendChild(g);
-  tw.p.appendChild(el('div', 'avkey', '<span><i style="background:color-mix(in srgb,#5fd39a 45%,var(--surface))"></i>Mostly free</span><span><i style="background:color-mix(in srgb,#f0b94a 40%,var(--surface))"></i>Some time</span><span><i style="background:color-mix(in srgb,#ff8f7d 45%,var(--surface))"></i>Booked up</span>'));
-  R.appendChild(tw.p);
-
-  /* ---- Couldn't Schedule: closed without a time ---- */
-  var unsch = all.filter(couldntSchedule).sort(function (a, b) { return (b.closedAt || b.updatedAt || 0) - (a.closedAt || a.updatedAt || 0); });
-  var us = dashPanel('Couldn’t Schedule', unsch.length ? plural(unsch.length, 'request', 'requests') : '', unsch.length > 4 ? 'All' : '', function () { STATE.listShow = 'unscheduled'; lsSet('listShow', 'unscheduled'); go('list'); });
-  unsch.slice(0, 4).forEach(function (r) {
-    var why = (r.robot && r.robot.why) ? 'Stopped because ' + r.robot.why : 'Closed by ' + (first(r.closedBy || '') || 'staff');
-    us.rows.appendChild(dashRow({ k: '#ff8f7d', nm: r.title || 'Meeting request', small: why, wh: whoOf(r), age: 'Closed ' + shortAgo(r.closedAt || r.updatedAt || now), go: function () { go(null, r.id); } }));
-  });
-  if (!unsch.length) us.p.appendChild(el('div', 'empty', 'Nothing yet. If we try and can’t find a time, close the request as Couldn’t Schedule and it stays here for reference.'));
-  L.appendChild(us.p);
-
-  /* ---- Incoming Email ---- */
-  var ib = dashPanel('Incoming Email', 'scheduling@mismo.org', 'All Email', function () { go('inbox'); });
-  inbox.slice(0, 5).forEach(function (x) {
-    var req = x.reqId ? getReq(x.reqId) : null;
-    ib.rows.appendChild(dashRow({ cls: 'r3', k: x.status === 'started' ? '#5fd39a' : x.status === 'dismissed' ? '#9fb3c8' : '#f0b94a', nm: x.subject || '(no subject)', small: displayName(x) + (x.robotNote ? ' · ' + x.robotNote : ''), age: shortAgo(x.receivedAt || now), go: function () { openEmail(x); } }));
-  });
-  if (!inbox.length) ib.p.appendChild(el('div', 'empty', 'Nothing has come in yet. Emails to scheduling@mismo.org show here a few minutes after they arrive.'));
-  R.appendChild(ib.p);
+  if (!npAll.length) np.p.appendChild(el('div', 'empty', 'Nothing yet. Requests that were scheduled outside the system, cancelled or couldn’t be scheduled show here with the reason, so the Scheduler can learn from them.'));
+  R.appendChild(np.p);
 
   /* ---- What the Scheduler did ---- */
-  var ac = dashPanel('Latest Activity', '', '', null), feed = el('div', 'feed');
+  var ac = dashPanel('Latest Activity', '', 'All Email', function () { go('inbox'); }), feed = el('div', 'feed');
   var events = [];
   all.forEach(function (r) { (r.log || []).forEach(function (e) { events.push({ r: r, e: e }); }); });
   events.sort(function (a, b) { return (b.e.at || 0) - (a.e.at || 0); }).slice(0, 14).forEach(function (x) {
@@ -3129,16 +3195,12 @@ var HELP = [
     '<tr><td>Someone set it up themselves</td><td>Press <b>Scheduled Outside the System</b> and enter the day and time.</td><td>It moves to Scheduled Outside the System on the Dashboard, counts in Statistics as scheduled, and the Scheduler emails no one about it.</td></tr><tr><td>The same meeting has two requests</td><td>Press <b>Close as Duplicate</b> on the extra one (or <b>It’s a Duplicate</b> if it was already closed).</td><td>It’s left out of Statistics, so the meeting counts once.</td></tr><tr><td>Give up</td><td>Press <b>Close as Couldn’t Schedule</b>.</td><td>It moves to Couldn’t Schedule on the Dashboard for reference.</td></tr></tbody></table>'; } },
   { id: 'dash', k: '#f0b94a', t: 'The Dashboard', h: function () { return '<h2>Reading the Dashboard</h2><p class="lead">Everything is on one page. Click any row to open it in the panel on the right; press × or Escape to close it. The browser’s Back goes to the last page you were on and closes an open panel first; it never undoes a change.</p>' +
     '<table><thead><tr><th>Part</th><th>What it shows</th></tr></thead><tbody>' +
-    '<tr><td><b>The Banner</b></td><td>What needs you, polls out, and meetings booked this week. The ring shows how many of the last 30 days’ requests are booked.</td></tr>' +
-    '<tr><td><b>Needs You</b></td><td>Shows at the top only when something is waiting: times to approve, polls where no time works (your call), polls whose three follow-ups went unanswered, requests the Scheduler stopped on, and people to follow up with on requests run by hand.</td></tr>' +
+    '<tr><td><b>The Banner</b></td><td>What needs you, polls out, and meetings booked this week. The ring shows, of the last 30 days’ requests that are finished, how many the Scheduler booked itself.</td></tr>' +
+    '<tr><td><b>Needs You</b></td><td>Shows at the top only when something is waiting: times to approve, polls where no time works (your call), polls whose three follow-ups went unanswered, requests the Scheduler stopped on, people to follow up with on requests run by hand, and any email it couldn’t place on a request.</td></tr>' +
     '<tr><td><b>Polls Out</b></td><td>Every poll waiting on guests: who has answered, how many times are on offer, and which follow-up they’re on.</td></tr>' +
     '<tr><td><b>Booked This Week</b></td><td>Meetings booked in the last seven days, automatic and by hand.</td></tr>' +
-    '<tr><td><b>Emails This Week</b></td><td>Everything that reached scheduling@mismo.org, and how many became requests.</td></tr>' +
     '<tr><td><b>Scheduled</b></td><td>Every meeting booked through the Scheduler that’s still ahead, soonest first. This week’s are marked green. Past ones are under All Requests, Past.</td></tr>' +
-    '<tr><td><b>Scheduled Outside the System</b></td><td>Meetings someone set up themselves (their own Outlook invitation), marked so they still count. Upcoming first. Past meetings are under All Requests, Past.</td></tr>' +
-    '<tr><td><b>Couldn’t Schedule</b></td><td>Requests we tried and closed without a time, with the reason. Open one and press Bring it back to try again, or It Was Scheduled Outside the System if someone set it up themselves.</td></tr>' +
-    '<tr><td><b>Team This Week</b></td><td>How much of each person’s day is free from 9 to 5 Eastern, from Outlook. Open Calendar for the half-hour view.</td></tr>' +
-    '<tr><td><b>Incoming Email</b></td><td>The latest emails and what the Scheduler did with each one.</td></tr>' +
+    '<tr><td><b>Didn’t Go to Plan</b></td><td>Requests the Scheduler didn’t book itself: scheduled outside the system, cancelled, or couldn’t schedule, newest first, each with the reason. One without a reason has an <b>Add Why</b> button: say why, and whether it was about how the Scheduler handled it or outside its control. The Scheduler has Claude group the reasons, and Statistics shows them under <b>What to Learn From</b>.</td></tr>' +
     '<tr><td><b>Latest Activity</b></td><td>Everything the Scheduler and the team did, newest first.</td></tr></tbody></table>' +
     '<div class="hnote"><b>Search</b> is at the top of the menu on the left. Type a person’s name or email, a company, a subject line, a MISMO teammate, or a word like booked or couldn’t; type two words to narrow it down (for example <i>kelly booked</i>). It finds requests, outside guests and the emails that came in.</div>'; } },
   { id: 'stats', k: '#2477b8', t: 'Statistics', h: function () { return '<h2>Statistics</h2><p class="lead">The Statistics tab on the left shows how scheduling is going. Pick Last 30 Days, Last 90 Days, This Year or All Time at the top; everything counts the requests started in that period. Hover over any bar for its number.</p>' +
@@ -3211,6 +3273,7 @@ var HELP = [
     ['Does the Scheduler send the calendar invite?', 'Yes. Once a time is approved, the Outlook invitation goes out from scheduling@mismo.org with the Zoom room link, and the meeting sits on the scheduling@mismo.org calendar. If it can’t, Vanessa gets a button to send it from Outlook.'],
     ['Which Zoom link do meetings use?', 'The MISMO Zoom room: info@mismo.org’s Personal Meeting Room, mba-org.zoom.us/j/2825175426. Guests can join without anyone hosting.'],
     ['Can it send an invite for a time that’s already agreed?', 'Yes. Open the request and press <b>Send an Invite</b> (or choose <b>Send an Invite for a Set Time</b> right after starting a New Request), pick the day and time, and press <b>Send the Invite</b>. It shows who from MISMO is busy then, and won’t use a time when the Zoom room is taken. Within a few minutes everyone gets the Outlook invitation from scheduling@mismo.org with the Zoom link, and any poll that was out stops. Only Vanessa and Jonna see the button. By email, write to scheduling@mismo.org asking for an invite at a set day and time (“please send an invite for Tuesday, Dec 1 at 2 ET with …”): there’s no poll; if everyone from MISMO is free it waits under Needs You for approval, and if not, you’re told why.'],
+    ['How do I close a request that didn’t work out?', 'Open it and press <b>Close This Request</b> (at the bottom, under History). Pick what happened (Scheduled Outside the System, Cancelled, Couldn’t Schedule, or a duplicate), say why, and whether it was about how the Scheduler handled it or outside its control. The person who asked can do the same by email: the email they get when their request starts has <b>It Was Scheduled Outside the System</b> and <b>Cancel This Request</b> buttons, or they can reply with “Cancel this Request”. Their reason is kept, and Claude groups every reason under What to Learn From in Statistics.'],
     ['What happens when I cancel a request whose poll is out?', 'The poll stops, and anyone who opens their link sees that it’s no longer being scheduled. Vanessa and Jonna also get the choice to email everyone who got the poll (with a note, for example “A new poll with fresh times will follow.”). Nothing is emailed unless you choose it. If you cancelled without telling them, open the cancelled request and press <b>Tell the Guests</b>.'],
     ['How do I move or cancel a booked meeting?', 'Open the request and press <b>Move Meeting</b> (pick a day and time; it shows who from MISMO is free) or <b>Cancel Meeting</b>. The Scheduler cancels the old Outlook invitation and sends a new one, or sends everyone Outlook’s cancellation. Guests can also reply to their invitation with a time that suits them: if everyone from MISMO is free then, the move waits for Vanessa or Jonna to approve. Meetings booked before November 7 can be moved too, but their old invitation has to be deleted in Outlook by hand.'],
     ['Where do old requests go?', 'A month after the meeting (or a month after a request was closed without one), the Scheduler moves it to a monthly archive so the working file stays small. Archived requests still show in All Requests (Past), Couldn’t Schedule, Statistics and search, marked Archived and read-only. Emails in the scheduling inbox are trimmed to the newest message after two weeks and cleared after 120 days; the request keeps its own copy of what was asked.'],
@@ -3300,11 +3363,18 @@ function viewStats(app) {
   head.appendChild(seg(STAT_RANGES, rk, function (v) { STATE.statRange = v; lsSet('statRange', v); render({ full: true }); }));
   app.appendChild(head);
 
-  var reqs = allReqs().filter(function (r) { return (r.createdAt || 0) >= from && !isDuplicate(r); });
-  var booked = reqs.filter(function (r) { return r.status === 'booked'; });
+  /* Each meeting counted once (Nov 27): duplicates, and requests replaced by a newer one (moved, or
+     Start a New Poll), are left out; the newer request carries the meeting. "Booked" means the
+     Scheduler booked it; scheduled outside the system, cancelled and couldn't schedule are the
+     ones that didn't go to plan. */
+  var reqs = allReqs().filter(function (r) { return (r.createdAt || 0) >= from && !isDuplicate(r) && !isSuperseded(r); });
+  var booked = reqs.filter(function (r) { return r.status === 'booked' && !r.bookedOutside; });
+  var outside = reqs.filter(function (r) { return outcomeKind(r) === 'outside'; });
   var unsch = reqs.filter(couldntSchedule);
-  var cancelled = reqs.filter(function (r) { return r.status === 'cancelled' && !couldntSchedule(r); });
+  var cancelled = reqs.filter(function (r) { return outcomeKind(r) === 'cancelled'; });
+  var notPlan = outside.concat(cancelled, unsch);
   var open = reqs.filter(function (r) { return r.status !== 'booked' && r.status !== 'cancelled'; });
+  var finished = reqs.length - open.length;
   var upcoming = booked.filter(function (r) { return !isPast(r); }).length;
   var toBook = booked.filter(function (r) { return r.bookedAt && r.createdAt; }).map(function (r) { return r.bookedAt - r.createdAt; });
   var guests = [], replies = [], reminders = 0, afterReminder = 0;
@@ -3317,9 +3387,9 @@ function viewStats(app) {
 
   /* ---- the six figures ---- */
   var tiles = el('div', 'stiles');
-  [['var(--c1)', 'Requests', reqs.length, rangeName.toLowerCase()],
-   ['var(--c3)', 'Booked', booked.length, pctOf(booked.length, reqs.length - cancelled.length) + ' of requests · ' + upcoming + ' still ahead'],
-   ['var(--c2)', 'Couldn’t Schedule', unsch.length, pctOf(unsch.length, reqs.length - cancelled.length) + ' of requests'],
+  [['var(--c1)', 'Requests', reqs.length, rangeName.toLowerCase() + ' · each meeting once'],
+   ['var(--c3)', 'Booked', booked.length, 'by the Scheduler · ' + pctOf(booked.length, finished) + ' of finished · ' + upcoming + ' still ahead'],
+   ['var(--c2)', 'Didn’t Go to Plan', notPlan.length, pctOf(notPlan.length, finished) + ' of finished · ' + notPlan.filter(function (r) { return !(r.outcome && r.outcome.why); }).length + ' without a reason'],
    ['var(--c4)', 'In Progress', open.length, open.filter(needsYou).length + ' need you'],
    ['var(--c1)', 'Time to Book', dur(avg(toBook)), 'on average, request to booked'],
    ['var(--c3)', 'Guest Reply Time', dur(avg(replies)), 'on average, poll to answer']
@@ -3332,8 +3402,8 @@ function viewStats(app) {
 
   /* ---- where requests ended up ---- */
   L.appendChild(mixPanel('Where Requests Ended Up', plural(reqs.length, 'request', 'requests'), [
-    { t: 'Booked', v: booked.length, k: 'var(--c1)' }, { t: 'Couldn’t Schedule', v: unsch.length, k: 'var(--c2)' },
-    { t: 'In Progress', v: open.length, k: 'var(--c3)' }, { t: 'Cancelled', v: cancelled.length, k: 'var(--c4)' }
+    { t: 'Booked by the Scheduler', v: booked.length, k: 'var(--c1)' }, { t: 'Scheduled Outside the System', v: outside.length, k: 'var(--c4)' },
+    { t: 'Cancelled', v: cancelled.length, k: 'var(--c5, #9fb3c8)' }, { t: 'Couldn’t Schedule', v: unsch.length, k: 'var(--c2)' }, { t: 'In Progress', v: open.length, k: 'var(--c3)' }
   ], 'No requests started in this period.'));
 
   /* ---- how the booked ones got booked ---- */
@@ -3351,8 +3421,26 @@ function viewStats(app) {
   ], 'Nothing booked in this period yet.'));
 
   row();
+  /* ---- why requests didn't go to plan (Jonna, Nov 27: so the Scheduler learns) ---- */
+  var cz = function (c) { return notPlan.filter(function (r) { var O = r.outcome || {}; return c === 'none' ? !O.why : O.why && (O.cause || 'unknown') === c; }).length; };
+  L.appendChild(mixPanel('Why Requests Didn’t Go to Plan', plural(notPlan.length, 'request', 'requests'), [
+    { t: 'How the Scheduler handled it', v: cz('scheduler'), k: 'var(--c2)' }, { t: 'Outside its control', v: cz('outside'), k: 'var(--c1)' },
+    { t: 'Not sure', v: cz('unknown'), k: 'var(--c3)' }, { t: 'No reason given yet', v: cz('none'), k: 'var(--c4)' }
+  ], 'Everything in this period was booked by the Scheduler.'));
+  var les = {};
+  notPlan.forEach(function (r) { var O = r.outcome || {}, k = O.lesson || (O.why ? 'Not sorted yet' : 'No reason given yet'); les[k] = les[k] || { t: k, v: 0, sch: 0 }; les[k].v++; if (O.cause === 'scheduler') les[k].sch++; });
+  var lesRows = Object.keys(les).map(function (k) { var x = les[k]; return { t: x.t, v: x.v, x: x.sch ? x.sch + ' the Scheduler’s' : '', tip: x.v + ' requests' }; }).sort(function (a, b) { return b.v - a.v || a.t.localeCompare(b.t); });
+  R.appendChild(barsPanel('What to Learn From', 'reasons, grouped', lesRows, 'No reasons yet. Each one added on the Dashboard or by email shows here, grouped by Claude.', notPlan.length ? 'The reasons the Scheduler could do something about point to what to change next.' : ''));
+
+  row();
   /* ---- polls (bottom row, left) ---- */
-  var approvals = reqs.filter(function (r) { return r.robot && r.robot.approved && r.robot.proposed && r.robot.approved.at && r.robot.proposed.at; }).map(function (r) { return Math.max(0, r.robot.approved.at - r.robot.proposed.at); });
+  /* approvals: the held time is cleared once it's booked, so the wait is measured from the history
+     ("Found a time … Waiting for approval") to the approval (Nov 27: this used to read 0) */
+  var approvedReqs = reqs.filter(function (r) { return r.robot && r.robot.approved && r.robot.approved.at; });
+  var approvals = approvedReqs.map(function (r) {
+    var A = r.robot.approved.at, held = (r.log || []).filter(function (l) { return l.at <= A && /Waiting for approval/i.test(l.what || ''); }).pop();
+    return held ? Math.max(0, A - held.at) : null;
+  }).filter(function (x) { return x != null; });
   var pollsP = figsPanel('Polls and Approvals', '', [
     ['Polls sent', reqs.filter(function (r) { return (r.guests || []).some(function (g) { return g.sentAt; }); }).length],
     ['Guests asked', guests.length],
@@ -3360,7 +3448,7 @@ function viewStats(app) {
     ['Follow-ups sent', reminders],
     ['Answered after a follow-up', afterReminder],
     ['Average reply time', dur(avg(replies))],
-    ['Times approved', approvals.length],
+    ['Times approved', approvedReqs.length],
     ['Average wait for approval', dur(avg(approvals)), 'From the Scheduler finding a time to Vanessa or Jonna approving it']
   ]);
 
@@ -3383,18 +3471,21 @@ function viewStats(app) {
   /* ---- email intake ---- */
   var mail = inboxItems().filter(function (x) { return (x.receivedAt || 0) >= from && !isHealthMail(x); });
   var became = mail.filter(function (x) { return x.status === 'started' || allReqs().some(function (r) { return r.inboxId === x.id; }); }).length;
-  var robotMade = reqs.filter(function (r) { return r.createdBy === 'Scheduler' || (r.robot && r.robot.auto && r.robot.readBy); });
+  var robotMade = reqs.filter(function (r) { return r.createdBy === 'Scheduler' || !!r.inboxId; });
   var byClaude = robotMade.filter(function (r) { return r.robot && r.robot.readBy === 'claude'; }).length;
   var stopped = reqs.filter(function (r) { return r.robot && (r.robot.stage === 'person' || r.robot.why); }).length;
-  R.appendChild(figsPanel('Email to scheduling@mismo.org', '', [
-    ['Emails received', mail.length],
-    ['Became requests', became + ' (' + pctOf(became, mail.length) + ')'],
-    ['Set aside', mail.filter(function (x) { return x.status === 'dismissed'; }).length],
-    ['Started by the Scheduler', robotMade.length],
+  /* counted from the requests themselves: old emails are cleared out of the inbox file, so counting
+     emails there undercounted older periods (Nov 27) */
+  var staffAsk = function (r) { return /@(mismo|mba)\.org$/i.test(r.askedByEmail || ''); };
+  R.appendChild(figsPanel('How Requests Came In', '', [
+    ['Started from an email', robotMade.length + ' (' + pctOf(robotMade.length, reqs.length) + ')'],
+    ['Started by hand on the page', reqs.length - robotMade.length],
     ['Read by Claude', byClaude + ' (' + pctOf(byClaude, robotMade.length) + ')'],
-    ['Stopped for a person', stopped],
-    ['Asked by MISMO staff', reqs.filter(function (r) { return /@mismo\.org$/i.test(r.askedByEmail || ''); }).length],
-    ['Asked by outside people', reqs.filter(function (r) { return r.askedByEmail && !/@mismo\.org$/i.test(r.askedByEmail); }).length]
+    ['Waiting on a person now', reqs.filter(needsYou).length],
+    ['Asked by MISMO staff', reqs.filter(staffAsk).length],
+    ['Asked by outside people', reqs.filter(function (r) { return r.askedByEmail && !staffAsk(r); }).length],
+    ['Closed by email', notPlan.filter(function (r) { return r.outcome && r.outcome.via === 'email'; }).length],
+    ['Emails in the last 30 days', inboxItems().filter(function (x) { return (x.receivedAt || 0) > now - 30 * 864e5 && !isHealthMail(x); }).length]
   ]));
   /* ---- reliability: the health check's day-by-day record ---- */
   var hist = ((HEALTH.data && HEALTH.data.history) || []).filter(function (d) { return d.date >= parts(from, ET).iso; });
