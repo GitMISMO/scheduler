@@ -1864,7 +1864,7 @@ function viewDetail(app, req) {
         ba.appendChild(btn(sl.e > Date.now() ? 'Move Meeting' : 'Reschedule Meeting', 'ghost', function () { openMove(req); }, 'cal'));
         if (sl.e > Date.now()) ba.appendChild(btn('Cancel Meeting', 'ghost', function () { cancelMeeting(req); }));
       }
-    } else if (editable) {
+    } else if (editable && !req.bookedOutside) {
       ba.appendChild(btn('Draft the confirmation email', 'ghost', function () { openDraft(req, 'confirm'); }, 'spark'));
       ba.appendChild(btn('Pick a different time', 'ghost', function () { var r = clone(req); r.status = ''; r.chosen = null; put(r, 'Reopened to pick a different time'); }));
     }
@@ -3006,7 +3006,8 @@ function viewDash(app) {
   var open = all.filter(function (r) { var ph = phase(r); return ph !== 'booked' && ph !== 'cancelled'; });
   var polls = open.filter(function (r) { var ph = phase(r); return ph === 'collecting' || ph === 'ready'; });
   var booked = all.filter(function (r) { return r.status === 'booked'; });
-  var bookedWeek = booked.filter(function (r) { return (r.bookedAt || 0) > weekAgo; });
+  /* booked by the Scheduler (scheduled outside the system is under Didn't Go to Plan, not here: Nov 27 audit) */
+  var bookedWeek = booked.filter(function (r) { return (r.bookedAt || 0) > weekAgo && !r.bookedOutside; });
   var coming = booked.filter(function (r) { return !r.bookedOutside; }).map(function (r) { return { r: r, sl: slotById(r, r.chosen) }; }).filter(function (x) { return x.sl && x.sl.e > now; }).sort(function (a, b) { return a.sl.s - b.sl.s; });
   var inbox = inboxItems().filter(function (x) { return !isHealthMail(x); }), inWeek = inbox.filter(function (x) { return (x.receivedAt || 0) > weekAgo; });
   var guestsWaiting = 0, guestsIn = 0;
