@@ -3727,6 +3727,80 @@ if (PREVIEW) {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go0); else go0();
 }
 
+/* ---- hover help on every button (Jonna, Nov 27): a short line on what it does. One list, applied
+   to every button as it appears, so new dialogs and panels get it too. A button that already has
+   its own title keeps it. ---- */
+var TIPS = [
+  [/^approve this time$|^approve$/i, 'Book this time. Everyone gets the Outlook invitation with the Zoom link within a few minutes.'],
+  [/^approve the move$/i, 'Move the meeting to the time the guest asked for. Outlook cancels the old invitation and sends the new one.'],
+  [/^keep the current time$/i, 'Leave the meeting where it is. Reply to the guest yourself if they need to hear why.'],
+  [/^book$/i, 'Book this time instead. It counts as your approval, and the invitation goes out.'],
+  [/^send the poll$/i, 'Email each guest their poll now. Nobody has been emailed until you press this.'],
+  [/^send new times$/i, 'Add a fresh set of times to the poll and ask everyone who already answered to look.'],
+  [/^send an invite$/i, 'Skip the poll: pick a day and time and send everyone the invitation. Your press is the approval.'],
+  [/^send an invite for a set time$/i, 'The time is already agreed: pick it and send everyone the invitation.'],
+  [/^send the invite$/i, 'Send everyone the Outlook invitation for this time from scheduling@mismo.org.'],
+  [/^send a follow-up now$/i, 'Send this guest a follow-up from scheduling@mismo.org straight away. The regular ones still go as planned.'],
+  [/^follow-up on its way$/i, 'A follow-up is already being sent.'],
+  [/^stop follow-ups$|^leave them stopped$/i, 'No more follow-up emails to guests who haven’t answered.'],
+  [/^start follow-ups again$|^start again$/i, 'Send three more follow-ups, every three working days, to guests who haven’t answered.'],
+  [/^reply to /i, 'Draft a reply to the person who asked. You copy it and send it from Outlook; nothing is sent from here.'],
+  [/^draft an email$|^draft the (invitation|confirmation) email$|^draft follow-up email$|^draft a reply$|^draft it$/i, 'Claude writes the email for you to copy and send from Outlook. Nothing is sent from here.'],
+  [/^edit details$/i, 'Change the title, length, where, who from MISMO attends, or the guests.'],
+  [/^close this request$/i, 'Close it: say what happened (outside the system, cancelled, couldn’t schedule, duplicate) and why.'],
+  [/^close the request$/i, 'Close it with what happened and why.'],
+  [/^close as couldn.t schedule$|^close it$/i, 'Close it because no time worked. You’ll be asked why.'],
+  [/^scheduled outside the system$/i, 'Someone set the meeting up themselves. The Scheduler stops; you’ll be asked why.'],
+  [/^add why$|^edit why$|^change what happened$/i, 'Say what happened and why. It helps the Scheduler learn.'],
+  [/^bring it back$/i, 'Reopen this request.'],
+  [/^tell the guests$|^send to \d+/i, 'Email everyone who got the poll that it’s no longer being scheduled.'],
+  [/^start a new poll$/i, 'Start a new request with the same people for the dates you pick. You check the times before it goes out.'],
+  [/^start the poll$/i, 'Create the new request. Nothing goes to the guests until you press Send the Poll.'],
+  [/^open the new poll$/i, 'Open the request that replaced this one.'],
+  [/^open the cancelled one$/i, 'Open the earlier request this one replaced.'],
+  [/^take over$/i, 'Stop the Scheduler on this one. You pick times, send polls and follow up yourself.'],
+  [/^hand back to the scheduler$|^let the scheduler handle it$/i, 'The Scheduler takes it from here: it sends the poll, follows up and books.'],
+  [/^move meeting$|^reschedule meeting$/i, 'Pick a new day and time. Outlook cancels the old invitation and sends a new one.'],
+  [/^move it$/i, 'Move the meeting to this time and send the new invitation.'],
+  [/^cancel meeting$/i, 'Cancel the booked meeting. Everyone gets Outlook’s cancellation.'],
+  [/^copy their link$/i, 'Copy this guest’s private poll link. It only works for them.'],
+  [/^times form$/i, 'Download a fillable PDF of the times, for a guest whose network blocks the poll page.'],
+  [/^enter their answer$|^change answer$/i, 'Type in which times work for this guest, for example when they replied by phone.'],
+  [/^make optional$/i, 'Times no longer have to work for this guest; they’re invited as optional.'],
+  [/^make required$/i, 'Times have to work for this guest again.'],
+  [/^pick times$|^change the times$|^pick times to offer$/i, 'Choose the times to offer, with everyone’s Outlook availability shown.'],
+  [/^create the invite in outlook$/i, 'Open a new Outlook invitation with the time and everyone’s addresses filled in.'],
+  [/^download invite file$/i, 'Download a calendar file (.ics) for this meeting.'],
+  [/^start a request$|^new request$/i, 'Start a meeting request by hand. Emailed requests start on their own.'],
+  [/^review what needs you$/i, 'Jump to the things waiting on you.'],
+  [/^i sent it$/i, 'Mark the poll as sent, so the follow-up reminder counts from then.'],
+  [/^i followed up$|^follow up$/i, 'Mark that you followed up, or draft the follow-up email.'],
+  [/^copy the (reply|email)$/i, 'Copy it, then paste it into Outlook.'],
+  [/^open( in outlook| as a new email in outlook)$/i, 'Open it as a new email in Outlook.'],
+  [/^read it for me$/i, 'Claude reads the pasted email and fills in the request.'],
+  [/^not a meeting request$/i, 'Set this email aside. The Scheduler won’t start a request from it.'],
+  [/^suggest 5 good times$|^use these times$/i, 'Times when everyone from MISMO is free, spread over the coming days.'],
+  [/^needs you/i, 'Jump to the things waiting on you.'],
+  [/^polls out/i, 'See every poll that’s out and who has answered.'],
+  [/^booked this week/i, 'See the meetings booked.'],
+  [/^didn.t go to plan/i, 'Jump to the requests the Scheduler didn’t book itself, with why.'],
+  [/^(upcoming|last 30 days|last 90 days|all|this year|all time)$/i, 'Change the dates shown.'],
+  [/^follow up\s*→$/i, 'People to follow up with on requests run by hand.'],
+  [/^all requests\s*→$|^all\s*→$/i, 'Every request, with filters.'],
+  [/^all email\s*→$/i, 'Every email that reached scheduling@mismo.org, and what the Scheduler did with it.']
+];
+function tipFor(b) { var t = (b.textContent || '').replace(/\s+/g, ' ').trim(); for (var i = 0; i < TIPS.length; i++) if (TIPS[i][0].test(t)) return TIPS[i][1]; return ''; }
+function addTips(root) {
+  (root.querySelectorAll ? root.querySelectorAll('button') : []).forEach(function (b) {
+    if (b.title && !b.dataset.tip) return;
+    var t = tipFor(b); if (t && b.title !== t) { b.title = t; b.dataset.tip = '1'; }
+  });
+}
+(function () {
+  var go0 = function () { addTips(document.body); try { new MutationObserver(function (ms) { ms.forEach(function (m) { m.addedNodes.forEach(function (n) { if (n.nodeType === 1) { if (n.tagName === 'BUTTON') addTips(n.parentNode || n); else addTips(n); } }); }); }).observe(document.body, { childList: true, subtree: true }); } catch (e) {} };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go0); else go0();
+})();
+
 /* ---- handles the rail, the search and the theme button need (Scheduler build, Nov 2026) ---- */
 window.__sched = {
   go: function(t, id){ return go(t, id); },
