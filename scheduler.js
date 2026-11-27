@@ -877,7 +877,8 @@ function cancelMeeting(req) {
    them by email with buttons (robot/logic.mjs toDecider). Vanessa and Jonna are the backup: after
    one business day without a choice it comes to them, with no reminder first (robot.askedAsker.escalatedAt).
    A time that works for everyone isn't a choice at all: it books itself (Jonna, Nov 27). */
-function waitingOnAsker(req) { var A = req && req.robot && req.robot.askedAsker; return !!(A && !A.escalatedAt && req.status !== 'cancelled'); }
+/* when Vanessa or Jonna asked, there's no one to wait on: it's theirs, so it stays in Needs You (Nov 27 audit) */
+function waitingOnAsker(req) { var A = req && req.robot && req.robot.askedAsker, q = (req && req.robot && req.robot.requester) || {}; return !!(A && !A.escalatedAt && req.status !== 'cancelled' && APPROVERS.indexOf(avKey(q.email || '')) < 0); }
 function askerName(req) { var q = (req.robot || {}).requester || {}; return q.name || q.email || 'the person who asked'; }
 function isAsker(req) { var q = (req.robot || {}).requester || {}; return !!(q.email && me().email && avKey(q.email) === avKey(me().email)); }
 function canDecide(req) { return canApprove() || (canEdit() && isAsker(req)); }
@@ -2016,7 +2017,7 @@ function loadSent() {
 function robotPanel(req, editable) {
   var R = req.robot || {}, look = needsLook(req), on = isAuto(req);
   var p = el('section', 'panel');
-  var sub = couldntSchedule(req) ? 'Couldn’t schedule — closed' : isDuplicate(req) ? 'Closed as a duplicate' : req.status === 'cancelled' ? 'Cancelled' : look ? 'Stopped — needs a person' : awaitingApproval(req) ? 'Found a time — waiting for approval' : !R.auto ? 'Handed over to staff' : req.status === 'booked' ? 'Booked it' : R.stage === 'polling' ? 'Poll out, set ' + (R.round || 1) + ' of times' : 'Working on it';
+  var sub = couldntSchedule(req) ? 'Couldn’t schedule — closed' : isDuplicate(req) ? 'Closed as a duplicate' : req.status === 'cancelled' ? 'Cancelled' : look ? 'Stopped — needs a person' : awaitingApproval(req) ? 'Best time found — waiting for a choice' : !R.auto ? 'Handed over to staff' : req.status === 'booked' ? 'Booked it' : R.stage === 'polling' ? 'Poll out, set ' + (R.round || 1) + ' of times' : 'Working on it';
   p.innerHTML = '<div class="panel-h"><h2>' + (on ? 'What the Scheduler Is Doing' : 'How This One Is Being Handled') + '</h2><span class="sub">' + esc(sub) + '</span></div>';
   var acts = el('div', 'acts'); $('.panel-h', p).appendChild(acts);
   var b = el('div', 'panel-b'); p.appendChild(b);
@@ -3300,7 +3301,7 @@ var HELP = [
     '<tr><td><b>The Six Figures</b></td><td>Requests, Booked, Couldn’t Schedule, In Progress, the average time from request to booked, and how long guests take to answer a poll.</td></tr>' +
     '<tr><td><b>Where Requests Ended Up</b></td><td>The split between booked, couldn’t schedule, still in progress and cancelled.</td></tr>' +
     '<tr><td><b>How Meetings Got Booked</b></td><td>Whether the times the person offered worked straight away, the first poll did it, more times were needed, or it was booked by hand.</td></tr>' +
-    '<tr><td><b>Polls and Approvals</b></td><td>Guests asked and answered, follow-ups, reply times, and how long a found time waits for approval.</td></tr>' +
+    '<tr><td><b>Polls and Approvals</b></td><td>Guests asked and answered, follow-ups, reply times, how many meetings booked with nobody approving, and how long a held best time waits for someone to choose it.</td></tr>' +
     '<tr><td><b>MISMO People in Meetings</b></td><td>For each person, meetings booked out of the requests they were on.</td></tr>' +
     '<tr><td><b>Organizations</b></td><td>The companies we schedule with most, from the guest’s company or email address.</td></tr>' +
     '<tr><td><b>Email to scheduling@mismo.org</b></td><td>What came in, how much became requests, and how often the Scheduler had to stop for a person.</td></tr></tbody></table>'; } },
@@ -3531,7 +3532,7 @@ function viewStats(app) {
      ("Found a time … Waiting for approval") to the approval (Nov 27: this used to read 0) */
   var approvedReqs = reqs.filter(function (r) { return r.robot && r.robot.approved && r.robot.approved.at; });
   var approvals = approvedReqs.map(function (r) {
-    var A = r.robot.approved.at, held = (r.log || []).filter(function (l) { return l.at <= A && /Waiting for approval/i.test(l.what || ''); }).pop();
+    var A = r.robot.approved.at, held = (r.log || []).filter(function (l) { return l.at <= A && /Waiting for (approval|.+ to book it)/i.test(l.what || ''); }).pop();
     return held ? Math.max(0, A - held.at) : null;
   }).filter(function (x) { return x != null; });
   var pollsP = figsPanel('Polls and Approvals', '', [
@@ -3541,8 +3542,9 @@ function viewStats(app) {
     ['Follow-ups sent', reminders],
     ['Answered after a follow-up', afterReminder],
     ['Average reply time', dur(avg(replies))],
-    ['Times approved', approvedReqs.length],
-    ['Average wait for approval', dur(avg(approvals)), 'From the Scheduler finding a time to Vanessa or Jonna approving it']
+    ['Booked with nobody approving', reqs.filter(function (r) { return r.status === 'booked' && r.robot && r.robot.auto && !r.robot.approved && !r.bookedOutside; }).length, 'A time that worked for everyone, booked by the Scheduler itself'],
+    ['Times chosen by a person', approvedReqs.length, 'Picked by the person who asked, Vanessa or Jonna'],
+    ['Average wait for a choice', dur(avg(approvals)), 'From the Scheduler holding the best time to someone choosing it']
   ]);
 
   /* ---- MISMO people ---- */
@@ -3665,13 +3667,15 @@ function previewRequests() {
     robot: { auto: true, stage: 'person', why: 'the email doesn’t say who from MISMO should be in the meeting', readBy: 'claude', acked: now - 3 * 36e5, requester: { name: 'Alex Kim', email: 'alex.kim@example.com' }, offered: [] },
     log: [{ at: now - 3 * 36e5, by: 'Scheduler', what: 'Handed to a person: the email doesn’t say who from MISMO should be in the meeting' }], updatedAt: now - 3 * 36e5 };
   var apS = etAt(d1[1], '11:00');
-  var ap = { id: 'ap2b4d6f8h', title: 'Sample: Data Standards Briefing, Example Credit Union (made up)', purpose: 'A made-up request where the Scheduler found a time and is waiting for approval.', duration: 30, where: 'Zoom', followDays: 2,
+  var ap = { id: 'ap2b4d6f8h', title: 'Sample: Data Standards Briefing, Example Credit Union (made up)', purpose: 'A made-up group poll where the best time (most, not all, can make it) is waiting for a choice.', duration: 30, where: 'Zoom', followDays: 2,
     owner: 'vrios@mismo.org', ownerName: 'Vanessa Rios', askedBy: 'Morgan Lee', askedByEmail: 'morgan.lee@example.com', createdAt: now - 40 * 6e4, createdBy: 'Scheduler', internal: ['jonathan', 'perry'],
     slots: [{ id: 'p0', s: apS, e: apS + 30 * M, added: now - 40 * 6e4 }],
-    guests: [{ id: 'g7', code: 'preview-morgan', name: 'Morgan Lee', email: 'morgan.lee@example.com', org: 'Example Credit Union' }],
-    robot: { auto: true, stage: 'approve', readBy: 'claude', acked: now - 40 * 6e4, requester: { name: 'Morgan Lee', email: 'morgan.lee@example.com' }, offered: [{ s: apS - 60 * M, e: apS + 60 * M }],
-      proposed: { id: 'p0', s: apS, e: apS + 30 * M, how: 'one of the times Morgan Lee offered, and everyone from MISMO is free', at: now - 40 * 6e4 } },
-    log: [{ at: now - 40 * 6e4, by: 'Scheduler', what: 'Found a time — waiting for approval' }], updatedAt: now - 40 * 6e4 };
+    guests: [{ id: 'g7', code: 'preview-morgan', name: 'Morgan Lee', email: 'morgan.lee@example.com', org: 'Example Credit Union', sentAt: now - 3 * 864e5, answer: { yes: ['p0'], maybe: [], at: now - 2 * 864e5 } },
+      { id: 'g7b', code: 'preview-riley', name: 'Riley Park', email: 'riley.park@example.com', org: 'Example Credit Union', sentAt: now - 3 * 864e5, answer: { yes: ['p0'], maybe: [], at: now - 2 * 864e5 } },
+      { id: 'g7c', code: 'preview-dana', name: 'Dana Cole', email: 'dana.cole@example.com', org: 'Example Bank', sentAt: now - 3 * 864e5, answer: { yes: [], maybe: [], at: now - 864e5 } }],
+    robot: { auto: true, stage: 'approve', prevStage: 'polling', readBy: 'claude', acked: now - 40 * 6e4, requester: { name: 'Morgan Lee', email: 'morgan.lee@example.com' }, offered: [{ s: apS - 60 * M, e: apS + 60 * M }],
+      proposed: { id: 'p0', s: apS, e: apS + 30 * M, how: '2 of 3 can make it, the most of any time; can’t: Dana Cole', at: now - 40 * 6e4 } },
+    log: [{ at: now - 40 * 6e4, by: 'Scheduler', what: 'Found a time: 2 of 3 can make it. Waiting for approval' }], updatedAt: now - 40 * 6e4 };
   var fuS = etAt(bizDaysAhead(6)[5], '13:00');
   var fu = { id: 'fu6h1j3k5m', title: 'Sample: eMortgage Roundtable Prep (made up)', purpose: 'A made-up booked meeting that’s still ahead.', duration: 30, where: 'Zoom', followDays: 2,
     owner: 'vrios@mismo.org', ownerName: 'Vanessa Rios', askedBy: 'Taylor Brooks', askedByEmail: 'taylor.brooks@example.com', createdAt: now - 5 * 864e5, createdBy: 'Scheduler', internal: ['amy', 'jonna'],

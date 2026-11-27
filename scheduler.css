@@ -628,7 +628,7 @@ body.railmini .rail nav button .n{display:none}
 .pane-b .pagehead h1{display:none}
 .pane-b .pagehead{margin-bottom:12px}
 @media(max-width:1100px){.dash-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.hgrid{grid-template-columns:1fr}.pane{width:100vw}}
-@media(max-width:700px){.hero{grid-template-columns:1fr;padding:20px;gap:16px}.hero-r{flex-direction:row;gap:14px;align-items:center}.hring{width:96px;height:96px}.hring-m b{font-size:22px}.hring-m span{font-size:8.5px}.hero h1{font-size:23px}.ktile .kn{font-size:28px}.row{grid-template-columns:10px minmax(0,1fr) auto}.row .wh,.row .dt{display:none}.avgrid{grid-template-columns:76px repeat(5,minmax(0,1fr))}.helpgrid{grid-template-columns:1fr}.helpnav{flex-direction:row;overflow-x:auto}.hsteps,.hfaq{grid-template-columns:1fr}}
+@media(max-width:700px){.hero{grid-template-columns:1fr;padding:20px;gap:16px}.hero-r{flex-direction:row;gap:14px;align-items:center}.hring{width:96px;height:96px}.hring-m b{font-size:22px}.hring-m span{font-size:8.5px}.hero h1{font-size:23px}.ktile .kn{font-size:28px}.row{grid-template-columns:10px minmax(0,1fr) auto}.row .wh,.row .dt{display:none}.row .acts{grid-column:2 / -1;justify-self:start;flex-wrap:wrap}.hring-c{white-space:normal}.avgrid{grid-template-columns:76px repeat(5,minmax(0,1fr))}.helpgrid{grid-template-columns:1fr}.helpnav{flex-direction:row;overflow-x:auto}.hsteps,.hfaq{grid-template-columns:1fr}}
 @media(max-width:480px){.dash-tiles{grid-template-columns:1fr}}
 @media(max-width:700px){.ph .hint{display:none}.ph{flex-wrap:wrap}.ph h2{white-space:normal}}
 .hgrid{align-items:stretch}
