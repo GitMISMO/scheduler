@@ -299,7 +299,7 @@ var DB = { server: { docs: {} }, sha: null, loaded: false, pending: {}, flushing
    of these, and that copy is what the change is compared with when it is saved. The guest's
    answer, the robot's notes and the log are not asked about: keepGuestAnswers settles those. */
 var SEEN = {}, MY_STAMPS = {};
-var MG_SCHED_QUIET = /(^|\u203a )(log|robot|robotEdit|answer|sentAt|reminders)( \u203a|$)/;
+var MG_SCHED_QUIET = /(^|\u203a )(log|robot|robotEdit|answer|sentAt|reminders|fyiSeen)( \u203a|$)/;
 function noteSeen(r) {
   if (!r || !r.id || r.updatedAt == null) return;
   var m = SEEN[r.id] = SEEN[r.id] || {};
@@ -804,6 +804,21 @@ function sendPollOk(req) {
   if (!canApprove()) { toast('Only Vanessa or Jonna can send it.'); return; }
   var r = clone(req); r.robotEdit = { pollOk: { by: me().name, at: Date.now() } };
   put(r, 'Checked the request and let the poll go out'); toast('The poll goes out from scheduling@mismo.org within a few minutes.');
+}
+/* Booked by the Scheduler (Jonna, Nov 27): a meeting the Scheduler booked on its own, or that the MISMO
+   person who asked chose, shows on Vanessa's and Jonna's Dashboard instead of a Booked and Invited
+   email (robot.fyi, set by robot.mjs once the invitation has gone). Each of them presses Got It
+   (fyiSeen, per person); it also drops off once the meeting is over. */
+function fyiFor(req) {
+  var F = req && req.robot && req.robot.fyi;
+  if (!F || !F.at || req.status !== 'booked' || req.bookedOutside) return false;
+  var sl = slotById(req, req.chosen); if (!sl || sl.e < Date.now()) return false;
+  var seen = (req.fyiSeen || {})[avKey(me().email)] || 0;
+  return seen < F.at;
+}
+function fyiGotIt(req) {
+  var r = clone(req); r.fyiSeen = Object.assign({}, r.fyiSeen || {}); r.fyiSeen[avKey(me().email)] = Date.now();
+  put(r, null);
 }
 /* a guest asked to move a booked meeting and MISMO is free: waiting for Vanessa or Jonna (robot/logic.mjs) */
 function awaitingMove(req) { var R = req.robot || {}; return !!(R.auto && req.status === 'booked' && R.proposedMove && R.proposedMove.s); }
@@ -3140,6 +3155,20 @@ function viewDash(app) {
     L.appendChild(wa.p);
   }
 
+  /* ---- Booked by the Scheduler: for awareness, instead of an email (Nov 27) ---- */
+  var fyis = canApprove() ? all.filter(fyiFor).sort(function (a, b) { return b.robot.fyi.at - a.robot.fyi.at; }) : [];
+  if (fyis.length) {
+    var fy = dashPanel('Booked by the Scheduler', 'for your awareness · nothing to do', '', null);
+    fyis.forEach(function (r) {
+      var sl = slotById(r, r.chosen), how = String(r.robot.fyi.how || '');
+      var why = /approved by /.test(how) ? 'Chosen by ' + how.replace(/^.*approved by /, '').replace(/ \(.*$/, '') : how ? how.charAt(0).toUpperCase() + how.slice(1) : 'Booked automatically';
+      var gi = btn('Got It', 'sm ghost', function () { fyiGotIt(r); }, 'check');
+      gi.title = 'Clears it from your Dashboard. It stays on the request, and Vanessa or Jonna still see it until they press Got It too.';
+      fy.rows.appendChild(dashRow({ k: '#5fd39a', nm: r.title || 'Meeting', small: slotLabel(sl, VIEW_TZ, true) + ' · ' + why, wh: 'Booked ' + shortAgo(r.robot.fyi.at), age: 'Invited', ageCls: 'ok', acts: [gi], go: function () { go(null, r.id); } }));
+    });
+    L.appendChild(fy.p);
+  }
+
   /* ---- Polls Out ---- */
   var pl = dashPanel('Polls Out', polls.length ? 'newest first' : '', 'All Requests', function () { STATE.listShow = 'active'; go('list'); });
   polls.slice().sort(function (a, b) { return (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0); }).slice(0, 6).forEach(function (r) {
@@ -3262,6 +3291,7 @@ var HELP = [
     '<tr><td><b>Booked This Week</b></td><td>Meetings booked in the last seven days, automatic and by hand.</td></tr>' +
     '<tr><td><b>Scheduled</b></td><td>Meetings the Scheduler booked. <b>Upcoming</b> shows those still ahead, soonest first (this week’s in green); <b>Last 30 Days</b>, <b>Last 90 Days</b> and <b>All</b> show the ones already held too, newest first.</td></tr>' +
     '<tr><td><b>Didn’t Go to Plan</b></td><td>Requests the Scheduler didn’t book itself: scheduled outside the system, cancelled, or couldn’t schedule, newest first, each with the reason. Pick Last 30 Days, Last 90 Days or All at the top. One without a reason has an <b>Add Why</b> button: say why, and whether it was about how the Scheduler handled it or outside its control. The Scheduler has Claude group the reasons, and Statistics shows them under <b>What to Learn From</b>.</td></tr>' +
+    '<tr><td><b>Booked by the Scheduler</b></td><td>Shows only to you and Vanessa, and only when there’s something new: meetings the Scheduler booked on its own, or that the person at MISMO who asked chose. It’s just so you know; press <b>Got It</b> to clear one from your Dashboard (Vanessa’s stays until she does too). It also drops off once the meeting is over.</td></tr>' +
     '<tr><td><b>Latest Activity</b></td><td>Everything the Scheduler and the team did, newest first.</td></tr></tbody></table>' +
     '<div class="hnote"><b>Search</b> is at the top of the menu on the left. Type a person’s name or email, a company, a subject line, a MISMO teammate, or a word like booked or couldn’t; type two words to narrow it down (for example <i>kelly booked</i>). It finds requests, outside guests and the emails that came in.</div>'; } },
   { id: 'stats', k: '#2477b8', t: 'Statistics', h: function () { return '<h2>Statistics</h2><p class="lead">The Statistics tab on the left shows how scheduling is going. Pick Last 30 Days, Last 90 Days, This Year or All Time at the top; everything counts the requests started in that period. Hover over any bar for its number.</p>' +
@@ -3289,7 +3319,7 @@ var HELP = [
     '<tr><td><b>Approve a Time</b></td><td>Vanessa, Jonna copied</td><td>When the best time on a group poll is one not everyone can make and someone outside MISMO asked, or the person at MISMO who asked hasn’t chosen within one business day. The same goes for No Time Works Yet, Follow-Ups Finished and Approve a New Time.</td></tr>' +
     '<tr><td><b>Confirmed: … on …</b></td><td>The guests and the person who asked, MISMO attendees copied</td><td>Only if the calendar invitation couldn’t go by itself. Normally the invitation is the confirmation, so no separate email goes out.</td></tr>' +
     '<tr><td><b>Calendar Invitation</b></td><td>Everyone in the meeting</td><td>Once a time is booked: an Outlook invitation from scheduling@mismo.org with a MISMO Zoom room link (the membership room for membership meetings, otherwise info@mismo.org’s room). Guests can join any time. The Scheduler never books two meetings in the same room at once, or over that room account’s own meetings, since a room holds one meeting at a time.</td></tr>' +
-    '<tr><td><b>Booked and Invited</b></td><td>Vanessa</td><td>Once the invitation has gone, when the Scheduler booked it on its own (any time that worked for everyone). Not after you, Vanessa or the person who asked chose, set or moved a time yourselves: that’s in the history. If the invitation can’t go by itself, Vanessa gets <b>Booked, Send the Invite</b> instead (Jonna copied), with a button that opens it in Outlook.</td></tr>' +
+    '<tr><td><b>Booked, Send the Invite</b></td><td>Vanessa, Jonna copied</td><td>Only when the invitation couldn’t go out by itself, with a button that opens it in Outlook. Meetings the Scheduler books normally don’t send you or Vanessa an email: they show on the Dashboard under <b>Booked by the Scheduler</b>.</td></tr>' +
     '<tr><td><b>Needs a Look</b></td><td>Vanessa, Jonna copied</td><td>When the Scheduler stops on a request.</td></tr>' +
     '<tr><td><b>Reply About …</b></td><td>Vanessa</td><td>When someone outside MISMO replies and a person needs to act: a question, a time MISMO can’t do, or a reply about a booked meeting. Not for replies from MISMO staff, or ones the Scheduler handled itself.</td></tr>' +
     '<tr><td><b>Approve a New Time: …</b></td><td>Vanessa, Jonna copied</td><td>A guest asked to move a booked meeting and everyone from MISMO is free then. Approve it, or keep the current time.</td></tr>' +
@@ -3645,8 +3675,8 @@ function previewRequests() {
   var fu = { id: 'fu6h1j3k5m', title: 'Sample: eMortgage Roundtable Prep (made up)', purpose: 'A made-up booked meeting that’s still ahead.', duration: 30, where: 'Zoom', followDays: 2,
     owner: 'vrios@mismo.org', ownerName: 'Vanessa Rios', askedBy: 'Taylor Brooks', askedByEmail: 'taylor.brooks@example.com', createdAt: now - 5 * 864e5, createdBy: 'Scheduler', internal: ['amy', 'jonna'],
     slots: [{ id: 'f0', s: fuS, e: fuS + 30 * M }], guests: [{ id: 'g8', code: 'preview-taylor', name: 'Taylor Brooks', email: 'taylor.brooks@example.com', org: 'Example Lending' }],
-    status: 'booked', chosen: 'f0', bookedAt: now - 4 * 864e5, robot: { auto: true, stage: 'booked', readBy: 'claude', invite: { state: 'sent', at: now - 4 * 864e5, zoom: { id: '81234567890', joinUrl: 'https://us02web.zoom.us/j/81234567890?pwd=example', passcode: '482913' } }, requester: { name: 'Taylor Brooks', email: 'taylor.brooks@example.com' }, offered: [] },
-    log: [{ at: now - 4 * 864e5, by: 'Scheduler', what: 'Booked after Jonna approved' }], updatedAt: now - 4 * 864e5 };
+    status: 'booked', chosen: 'f0', bookedAt: now - 4 * 864e5, robot: { auto: true, stage: 'booked', readBy: 'claude', fyi: { at: now - 4 * 864e5, how: 'everyone said it works' }, invite: { state: 'sent', at: now - 4 * 864e5, zoom: { id: '81234567890', joinUrl: 'https://us02web.zoom.us/j/81234567890?pwd=example', passcode: '482913' } }, requester: { name: 'Taylor Brooks', email: 'taylor.brooks@example.com' }, offered: [] },
+    log: [{ at: now - 4 * 864e5, by: 'Scheduler', what: 'Booked ' + 'automatically — everyone said it works' }], updatedAt: now - 4 * 864e5 };
   var un = { id: 'un9p2r4t6v', title: 'Sample: Vendor Intro, Example Tech (made up)', purpose: 'A made-up request we tried and couldn’t schedule.', duration: 30, where: 'Zoom', followDays: 2,
     owner: 'vrios@mismo.org', ownerName: 'Vanessa Rios', askedBy: 'Drew Patel', askedByEmail: 'drew.patel@example.com', createdAt: now - 12 * 864e5, createdBy: 'Scheduler', internal: ['brian'], slots: [],
     guests: [{ id: 'g9', code: 'preview-drew', name: 'Drew Patel', email: 'drew.patel@example.com', org: 'Example Tech' }],
